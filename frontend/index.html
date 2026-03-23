@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Pitch Coach</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>AI Pitch Coach</h1>
+            <p class="subtitle">Practice your pitch with real-time AI feedback</p>
+        </header>
+
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <div class="status-item">
+                <span class="status-dot" id="sttStatus"></span>
+                <span>Speech-to-Text</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot" id="llmStatus"></span>
+                <span>AI (Ollama)</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot" id="ttsStatus"></span>
+                <span>Text-to-Speech</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot" id="wsStatus"></span>
+                <span>Connection</span>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Recording Section -->
+            <section class="recording-section">
+                <button class="record-button" id="recordButton">
+                    <span class="record-icon" id="recordIcon"></span>
+                    <span id="recordText">Start Recording</span>
+                </button>
+
+                <!-- Audio Visualizer - Shows when recording -->
+                <div class="visualizer-container" id="visualizerContainer">
+                    <canvas id="audioVisualizer"></canvas>
+                    <div class="audio-level-container">
+                        <div class="audio-level-bar" id="audioLevelBar"></div>
+                    </div>
+                    <div class="recording-info">
+                        <span class="recording-dot"></span>
+                        <span class="recording-timer" id="recordingTimer">00:00</span>
+                    </div>
+                </div>
+
+                <p class="recording-hint" id="recordingHint">
+                    Click the button and speak your pitch clearly
+                </p>
+            </section>
+
+            <!-- Live Transcript Section -->
+            <section class="transcript-section">
+                <h2>Live Transcript</h2>
+                <div class="transcript-box" id="transcriptBox">
+                    <p class="placeholder">Your speech will appear here...</p>
+                </div>
+            </section>
+
+            <!-- Scores Section -->
+            <section class="scores-section">
+                <h2>Pitch Scores</h2>
+                <div class="scores-grid">
+                    <div class="score-card">
+                        <div class="score-value" id="clarityScore">-</div>
+                        <div class="score-label">Clarity</div>
+                        <div class="score-bar">
+                            <div class="score-fill" id="clarityFill"></div>
+                        </div>
+                    </div>
+                    <div class="score-card">
+                        <div class="score-value" id="languageScore">-</div>
+                        <div class="score-label">Language</div>
+                        <div class="score-bar">
+                            <div class="score-fill" id="languageFill"></div>
+                        </div>
+                    </div>
+                    <div class="score-card">
+                        <div class="score-value" id="confidenceScore">-</div>
+                        <div class="score-label">Confidence</div>
+                        <div class="score-bar">
+                            <div class="score-fill" id="confidenceFill"></div>
+                        </div>
+                    </div>
+                    <div class="score-card">
+                        <div class="score-value" id="relevanceScore">-</div>
+                        <div class="score-label">Topic Relevance</div>
+                        <div class="score-bar">
+                            <div class="score-fill" id="relevanceFill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filler Words Counter -->
+                <div class="filler-words">
+                    <span class="filler-label">Filler Words:</span>
+                    <span class="filler-count" id="fillerCount">0</span>
+                    <span class="filler-details" id="fillerDetails"></span>
+                </div>
+            </section>
+
+            <!-- AI Feedback Section -->
+            <section class="feedback-section">
+                <h2>AI Feedback</h2>
+                <div class="feedback-box" id="feedbackBox">
+                    <p class="placeholder">AI analysis will appear here after you record...</p>
+                </div>
+            </section>
+
+            <!-- Audio Playback Section (Hidden) -->
+            <div class="audio-container" id="audioContainer">
+                <audio id="audioPlayer" autoplay></audio>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Powered by faster-whisper, Ollama, and Piper TTS</p>
+            <p>All processing happens locally on your machine</p>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p id="loadingText">Processing...</p>
+    </div>
+
+    <script src="/script.js"></script>
+</body>
+</html>

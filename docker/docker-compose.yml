@@ -1,0 +1,64 @@
+# AI Pitch Coach - Docker Compose Configuration
+# Runs the full stack: backend + Ollama LLM server
+
+version: '3.8'
+
+services:
+  # AI Pitch Coach Backend
+  pitch-coach:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ai-pitch-coach
+    ports:
+      - "8000:8000"
+    environment:
+      - WHISPER_MODEL_SIZE=tiny
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=qwen3:0.6b
+      - PRELOAD_STT_MODEL=true
+    volumes:
+      # Persist models to avoid re-downloading
+      - whisper-models:/app/models/whisper
+      - piper-models:/app/models/piper
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    networks:
+      - pitch-coach-network
+
+  # Ollama LLM Server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      # Persist Ollama models
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - pitch-coach-network
+    # Auto-pull the model on startup
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        sleep 5
+        ollama pull qwen3:0.6b
+        wait
+
+# Named volumes for persistence
+volumes:
+  whisper-models:
+  piper-models:
+  ollama-data:
+
+# Network for inter-service communication
+networks:
+  pitch-coach-network:
+    driver: bridge

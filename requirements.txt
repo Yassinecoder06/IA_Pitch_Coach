@@ -1,0 +1,33 @@
+# AI Pitch Coach - Python Dependencies
+# =====================================
+#
+# Install with: pip install -r requirements.txt
+#
+# Optimized for 8GB RAM machines with CPU-only inference
+
+# === Web Framework ===
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+websockets>=12.0
+
+# === Speech-to-Text ===
+# faster-whisper: 4x faster than OpenAI Whisper, uses CTranslate2
+faster-whisper>=1.0.0
+
+# === Text-to-Speech ===
+# Piper TTS: Fast local TTS (install separately or via pip)
+# pip install piper-tts
+
+# === HTTP Client ===
+httpx>=0.26.0
+
+# === Audio Processing ===
+numpy>=1.24.0
+soundfile>=0.12.0
+
+# === Utilities ===
+python-multipart>=0.0.6  # For file uploads
+
+# === Optional: GPU Acceleration ===
+# Uncomment for NVIDIA GPU support:
+# ctranslate2[cuda]>=4.0.0
