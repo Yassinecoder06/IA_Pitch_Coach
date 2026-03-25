@@ -414,48 +414,61 @@ def extract_tts_summary(response: str) -> str:
     if not response or not response.strip():
         return ""
 
-    # Try to extract the ANALYSIS section
+    text = response.strip()
+
+    # Remove common reasoning tags that some models include.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<\/?analysis>", "", text, flags=re.IGNORECASE)
+
+    # Prefer ANALYSIS section when present.
     analysis_match = re.search(
-        r"ANALYSIS:\s*\n?(.+?)(?=\n\n|ADVICE:|SCORES:|$)",
-        response,
+        r"ANALYSIS:\s*\n?(.+?)(?=\n\s*ADVICE:|\n\s*SCORES:|$)",
+        text,
         re.IGNORECASE | re.DOTALL
     )
-
     if analysis_match:
-        text = analysis_match.group(1).strip()
-        if text:
-            return text
+        analysis_text = " ".join(analysis_match.group(1).split())
+        if analysis_text:
+            return analysis_text
 
-    # Try to find any paragraph that looks like feedback
-    # Skip lines that are just scores like "Clarity: 7/10"
-    lines = response.split('\n')
-    feedback_lines = []
+    # If no analysis block, collect meaningful lines (including bullet advice text).
+    lines = text.split("\n")
+    candidate_lines = []
 
     for line in lines:
         line = line.strip()
-        # Skip empty lines, score lines, and section headers
         if not line:
             continue
-        if re.match(r'^(Clarity|Language|Confidence|Topic|Filler|SCORES|ADVICE|ANALYSIS):', line, re.IGNORECASE):
-            continue
-        if re.match(r'^\d+/10', line):
-            continue
-        if line.startswith('-') or line.startswith('*'):
-            continue
-        if len(line) > 20:  # Only include substantial lines
-            feedback_lines.append(line)
-            if len(feedback_lines) >= 2:
-                break
 
-    if feedback_lines:
-        return " ".join(feedback_lines)
+        # Strip markdown bullet/numbering while keeping content.
+        line = re.sub(r"^[-*•]\s+", "", line)
+        line = re.sub(r"^\d+[.)]\s+", "", line)
 
-    # Last fallback: take first 2 sentences from the response
-    sentences = split_into_sentences(response)
+        # Skip pure headers or score lines.
+        if re.match(r"^(SCORES|ANALYSIS|ADVICE):?$", line, re.IGNORECASE):
+            continue
+        if re.match(r"^(Clarity|Language|Confidence|Topic Relevance|Filler\s*Words?)\s*:\s*\d+\s*/\s*10\s*$", line, re.IGNORECASE):
+            continue
+
+        # Skip markdown formatting lines.
+        if re.match(r"^[#`*_\-]+$", line):
+            continue
+
+        if len(line) >= 8:
+            candidate_lines.append(line)
+        if len(candidate_lines) >= 2:
+            break
+
+    if candidate_lines:
+        return " ".join(candidate_lines)
+
+    # Last fallback: speak first one or two non-empty sentences from cleaned text.
+    cleaned = " ".join(text.split())
+    sentences = split_into_sentences(cleaned)
     if sentences:
         return " ".join(sentences[:2])
 
-    return ""
+    return cleaned[:220].strip()
 
 
 # ============================================================================
