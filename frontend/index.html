@@ -22,7 +22,7 @@
             </div>
             <div class="status-item">
                 <span class="status-dot" id="llmStatus"></span>
-                <span>AI (Ollama)</span>
+                <span id="llmStatusLabel">AI</span>
             </div>
             <div class="status-item">
                 <span class="status-dot" id="ttsStatus"></span>
@@ -36,6 +36,37 @@
 
         <!-- Main Content -->
         <main class="main-content">
+            <!-- Configuration Section -->
+            <section class="config-section">
+                <div class="config-row">
+                    <div class="config-item">
+                        <label for="providerSelect">AI Provider</label>
+                        <select id="providerSelect">
+                            <option value="ollama">Ollama (Local)</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label for="modelSelect">Model</label>
+                        <select id="modelSelect">
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label for="modeSelect">Coaching Mode</label>
+                        <select id="modeSelect">
+                            <option value="pitch_analysis">Pitch Analysis</option>
+                            <option value="interactive">Interactive Coaching</option>
+                            <option value="investor_qa">Investor Q&A</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="config-actions">
+                    <button class="btn-secondary" id="resetConversationBtn" title="Clear conversation history">
+                        Reset Conversation
+                    </button>
+                </div>
+            </section>
+
             <!-- Recording Section -->
             <section class="recording-section">
                 <button class="record-button" id="recordButton">
@@ -68,8 +99,8 @@
                 </div>
             </section>
 
-            <!-- Scores Section -->
-            <section class="scores-section">
+            <!-- Scores Section (only visible in pitch_analysis mode) -->
+            <section class="scores-section" id="scoresSection">
                 <h2>Pitch Scores</h2>
                 <div class="scores-grid">
                     <div class="score-card">
@@ -118,6 +149,14 @@
                 </div>
             </section>
 
+            <!-- Conversation History (for interactive modes) -->
+            <section class="history-section" id="historySection" style="display: none;">
+                <h2>Conversation History</h2>
+                <div class="history-box" id="historyBox">
+                    <p class="placeholder">Previous turns will appear here...</p>
+                </div>
+            </section>
+
             <!-- Audio Playback Section (Hidden) -->
             <div class="audio-container" id="audioContainer">
                 <audio id="audioPlayer" autoplay></audio>
@@ -126,8 +165,8 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>Powered by faster-whisper, Ollama, and Piper TTS</p>
-            <p>All processing happens locally on your machine</p>
+            <p>Powered by faster-whisper, multiple LLM providers, and Piper TTS</p>
+            <p>Supports local and cloud AI models</p>
         </footer>
     </div>
 

@@ -27,6 +27,7 @@ soundfile>=0.12.0
 
 # === Utilities ===
 python-multipart>=0.0.6  # For file uploads
+python-dotenv>=1.0.0     # Environment configuration
 
 # === Optional: GPU Acceleration ===
 # Uncomment for NVIDIA GPU support:

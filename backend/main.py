@@ -2,17 +2,19 @@
 AI Pitch Coach - FastAPI Backend
 ================================
 Real-time voice-based pitch coaching using WebSockets.
+Supports multiple LLM providers and coaching modes.
 
 Pipeline:
 1. Browser records audio
 2. Audio chunks sent via WebSocket
 3. faster-whisper converts speech to text
-4. LLM (qwen3.5:2b via Ollama) analyzes pitch
+4. LLM (configurable provider) analyzes pitch
 5. Piper generates audio response
 6. Audio sent back to browser
 """
 
 import os
+import sys
 import io
 import json
 import wave
@@ -21,34 +23,44 @@ import base64
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-# Import our modules
-from stt import load_model as load_stt_model, transcribe_audio
-from llm import (
-    check_ollama_status,
-    analyze_pitch,
-    stream_llm_response,
-    count_filler_words,
-    get_total_filler_count,
-    parse_scores_from_response,
-    PITCH_COACH_SYSTEM_PROMPT
-)
-from tts import (
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import configuration
+from backend.config import settings
+
+# Import voice modules
+from backend.voice.stt import load_model as load_stt_model, transcribe_audio
+from backend.voice.tts import (
     check_piper_available,
     synthesize_speech,
-    split_into_sentences,
-    get_voice_model_path
+    split_into_sentences
 )
+from backend.voice.voice_loop import VoiceLoop, VoiceLoopState, VoiceLoopConfig
+
+# Import analysis modules
+from backend.analysis.filler_detection import count_filler_words, get_total_filler_count
+from backend.analysis.pitch_analysis import (
+    PitchAnalyzer,
+    CoachingMode,
+    PITCH_COACH_SYSTEM_PROMPT,
+    parse_scores_from_response
+)
+
+# Import LLM modules
+from backend.llm import get_provider, list_providers, get_available_providers
+
 
 # Create FastAPI app
 app = FastAPI(
     title="AI Pitch Coach",
-    description="Real-time voice-based pitch coaching",
-    version="1.0.0"
+    description="Real-time voice-based pitch coaching with multiple LLM providers",
+    version="2.0.0"
 )
 
 # CORS middleware for local development
@@ -85,27 +97,29 @@ async def startup_event():
     except Exception as e:
         print(f"[Startup] Warning: STT model failed to load: {e}")
 
-    # Check Ollama status
-    print("\n[Startup] Checking Ollama LLM...")
-    ollama_status = await check_ollama_status()
-    if ollama_status["status"] == "ok":
-        print(f"[Startup] Ollama is running, model: {ollama_status['model']}")
-        if not ollama_status["model_available"]:
-            print(f"[Startup] Warning: Model not found. Run: ollama pull {ollama_status['model']}")
-    else:
-        print(f"[Startup] Warning: {ollama_status['message']}")
+    # Check LLM providers
+    print("\n[Startup] Checking LLM providers...")
+    providers = await get_available_providers()
+    for name, status in providers.items():
+        if status.get("available"):
+            print(f"[Startup] {name}: Available")
+        else:
+            print(f"[Startup] {name}: {status.get('message', 'Not available')}")
+
+    default_provider = settings.default_provider
+    print(f"[Startup] Default provider: {default_provider}")
 
     # Check TTS status
     print("\n[Startup] Checking Text-to-Speech...")
     tts_available, tts_msg = check_piper_available()
     if tts_available:
-        print(f"[Startup] Piper TTS is available")
+        print("[Startup] Piper TTS is available")
     else:
         print(f"[Startup] Warning: {tts_msg}")
 
     startup_complete = True
     print("\n" + "=" * 60)
-    print("Startup complete! Open http://localhost:8000 in your browser")
+    print(f"Startup complete! Open http://localhost:{settings.server.port} in your browser")
     print("=" * 60 + "\n")
 
 
@@ -125,7 +139,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    ollama_status = await check_ollama_status()
+    providers = await get_available_providers()
     tts_available, tts_msg = check_piper_available()
 
     return {
@@ -133,7 +147,13 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "components": {
             "stt": "ready",
-            "llm": ollama_status,
+            "llm": {
+                "default": settings.default_provider,
+                "providers": {
+                    name: status.get("available", False)
+                    for name, status in providers.items()
+                }
+            },
             "tts": {"available": tts_available, "message": tts_msg}
         }
     }
@@ -142,24 +162,64 @@ async def health_check():
 @app.get("/api/status")
 async def get_status():
     """Get detailed system status."""
-    ollama_status = await check_ollama_status()
+    providers = await get_available_providers()
     tts_available, tts_msg = check_piper_available()
 
     return {
         "stt": {
             "status": "ready",
-            "model": os.getenv("WHISPER_MODEL_SIZE", "tiny")
+            "model": settings.stt.model_size
         },
         "llm": {
-            "status": ollama_status["status"],
-            "model": ollama_status.get("model"),
-            "available": ollama_status.get("model_available", False)
+            "status": "ready" if any(p.get("available") for p in providers.values()) else "unavailable",
+            "default_provider": settings.default_provider,
+            "available": True
         },
         "tts": {
             "status": "ready" if tts_available else "unavailable",
             "message": tts_msg
         }
     }
+
+
+@app.get("/api/providers")
+async def get_providers():
+    """Get available LLM providers and their models."""
+    providers = await get_available_providers()
+
+    result = {}
+    for name, status in providers.items():
+        if status.get("available"):
+            result[name] = {
+                "name": name,
+                "available": True,
+                "models": status.get("models", [])
+            }
+
+    return {
+        "providers": result,
+        "default": settings.default_provider
+    }
+
+
+@app.get("/api/models/{provider}")
+async def get_provider_models(provider: str):
+    """Get available models for a specific provider."""
+    llm_provider = get_provider(provider)
+    if llm_provider is None:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider}' not found")
+
+    try:
+        models = await llm_provider.list_models()
+        return {"provider": provider, "models": models}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/settings")
+async def get_settings():
+    """Get current settings (safe subset)."""
+    return settings.to_dict()
 
 
 # ============================================================================
@@ -174,6 +234,7 @@ async def websocket_endpoint(websocket: WebSocket):
     Protocol:
     - Client sends: {"type": "audio", "data": base64_audio_chunk}
     - Client sends: {"type": "stop"} to end recording
+    - Client sends: {"type": "config", "provider": "...", "model": "...", "mode": "..."}
     - Server sends: {"type": "transcript", "text": "...", "final": bool}
     - Server sends: {"type": "analysis", "text": "...", "streaming": bool}
     - Server sends: {"type": "scores", "data": {...}}
@@ -184,9 +245,15 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("[WebSocket] Client connected")
 
-    # Buffer for accumulating audio chunks
+    # Session state
     audio_chunks: List[bytes] = []
     is_recording = False
+    session_config = {
+        "provider": settings.default_provider,
+        "model": None,
+        "mode": CoachingMode.PITCH_ANALYSIS
+    }
+    conversation_history: List[Dict] = []
 
     try:
         while True:
@@ -195,7 +262,26 @@ async def websocket_endpoint(websocket: WebSocket):
             message = json.loads(data)
             msg_type = message.get("type")
 
-            if msg_type == "start":
+            if msg_type == "config":
+                # Update session configuration
+                if "provider" in message:
+                    session_config["provider"] = message["provider"]
+                if "model" in message:
+                    session_config["model"] = message["model"]
+                if "mode" in message:
+                    mode_str = message["mode"]
+                    try:
+                        session_config["mode"] = CoachingMode(mode_str)
+                    except ValueError:
+                        session_config["mode"] = CoachingMode.PITCH_ANALYSIS
+                print(f"[WebSocket] Config updated: {session_config}")
+                await websocket.send_json({"type": "config_ack", "config": {
+                    "provider": session_config["provider"],
+                    "model": session_config["model"],
+                    "mode": session_config["mode"].value
+                }})
+
+            elif msg_type == "start":
                 # Start new recording session
                 audio_chunks = []
                 is_recording = True
@@ -216,12 +302,22 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"[WebSocket] Recording stopped, processing {len(audio_chunks)} chunks")
 
                 if audio_chunks:
-                    await process_audio_pipeline(websocket, audio_chunks)
+                    await process_audio_pipeline(
+                        websocket,
+                        audio_chunks,
+                        session_config,
+                        conversation_history
+                    )
                 else:
                     await websocket.send_json({
                         "type": "error",
                         "message": "No audio received"
                     })
+
+            elif msg_type == "reset":
+                # Reset conversation history
+                conversation_history = []
+                await websocket.send_json({"type": "reset_ack"})
 
             elif msg_type == "ping":
                 # Keep-alive ping
@@ -237,7 +333,12 @@ async def websocket_endpoint(websocket: WebSocket):
             pass
 
 
-async def process_audio_pipeline(websocket: WebSocket, audio_chunks: List[bytes]):
+async def process_audio_pipeline(
+    websocket: WebSocket,
+    audio_chunks: List[bytes],
+    config: Dict,
+    conversation_history: List[Dict]
+):
     """
     Process audio through the full pipeline:
     1. Combine audio chunks
@@ -301,12 +402,24 @@ async def process_audio_pipeline(websocket: WebSocket, audio_chunks: List[bytes]
     })
 
     # Step 4: Analyze with LLM (streaming)
-    print("[Pipeline] Analyzing pitch with LLM...")
+    print(f"[Pipeline] Analyzing with {config['provider']}...")
     await websocket.send_json({"type": "status", "message": "Analyzing pitch..."})
+
+    # Create analyzer with configured provider
+    analyzer = PitchAnalyzer(
+        provider_name=config["provider"],
+        model=config["model"]
+    )
 
     full_response = ""
 
-    async for chunk in analyze_pitch(transcript, total_fillers, word_count):
+    async for chunk in analyzer.analyze(
+        transcript,
+        filler_count=total_fillers,
+        word_count=word_count,
+        mode=config["mode"],
+        conversation_history=conversation_history
+    ):
         full_response += chunk
 
         # Send streaming chunk
@@ -324,46 +437,39 @@ async def process_audio_pipeline(websocket: WebSocket, audio_chunks: List[bytes]
         "complete": True
     })
 
-    # Parse and send scores
-    scores = parse_scores_from_response(full_response)
-    await websocket.send_json({
-        "type": "scores",
-        "data": scores
-    })
+    # Update conversation history
+    conversation_history.append({"role": "user", "content": transcript})
+    conversation_history.append({"role": "assistant", "content": full_response})
 
-    # Step 5: Generate TTS for response (sentence by sentence)
+    # Parse and send scores (for pitch analysis mode)
+    if config["mode"] == CoachingMode.PITCH_ANALYSIS:
+        scores = parse_scores_from_response(full_response)
+        await websocket.send_json({
+            "type": "scores",
+            "data": scores
+        })
+
+    # Step 5: Generate TTS for response
     print("[Pipeline] Generating speech response...")
-    tts_available, tts_msg = check_piper_available()
-    print(f"[Pipeline] TTS available: {tts_available}, {tts_msg}")
+    tts_available, _ = check_piper_available()
 
     if tts_available:
-        # Extract a summary sentence for TTS (keep it short)
-        tts_text = extract_tts_summary(full_response)
-        print(f"[Pipeline] TTS text extracted: {tts_text[:100] if tts_text else 'None'}...")
+        tts_text = PitchAnalyzer.extract_tts_summary(full_response)
+        print(f"[Pipeline] TTS text: {tts_text[:100] if tts_text else 'None'}...")
 
         if tts_text:
             await websocket.send_json({"type": "status", "message": "Generating voice response..."})
 
             sentences = split_into_sentences(tts_text)
-            print(f"[Pipeline] TTS sentences: {len(sentences)}")
-
-            for i, sentence in enumerate(sentences[:3]):  # Limit to 3 sentences for speed
-                print(f"[Pipeline] Synthesizing sentence {i+1}: {sentence[:50]}...")
+            for i, sentence in enumerate(sentences[:3]):
                 audio = synthesize_speech(sentence)
                 if audio:
-                    print(f"[Pipeline] Audio generated: {len(audio)} bytes")
                     audio_base64 = base64.b64encode(audio).decode("utf-8")
                     await websocket.send_json({
                         "type": "audio",
                         "data": audio_base64,
                         "format": "wav"
                     })
-                else:
-                    print(f"[Pipeline] Failed to generate audio for sentence {i+1}")
-        else:
-            print("[Pipeline] No TTS text extracted from response")
-    else:
-        print(f"[Pipeline] TTS not available: {tts_msg}")
 
     # Signal completion
     await websocket.send_json({"type": "complete"})
@@ -373,9 +479,6 @@ async def process_audio_pipeline(websocket: WebSocket, audio_chunks: List[bytes]
 def combine_audio_chunks(chunks: List[bytes]) -> Optional[bytes]:
     """
     Combine received audio chunks into a valid WAV file.
-
-    The browser typically sends webm/opus or wav chunks.
-    We need to convert to a format faster-whisper can process.
     """
     if not chunks:
         return None
@@ -388,7 +491,6 @@ def combine_audio_chunks(chunks: List[bytes]) -> Optional[bytes]:
         return combined
 
     # If it's raw PCM data, wrap in WAV header
-    # Assume 16-bit mono audio at 16kHz (common for speech)
     try:
         output = io.BytesIO()
 
@@ -401,74 +503,7 @@ def combine_audio_chunks(chunks: List[bytes]) -> Optional[bytes]:
         return output.getvalue()
     except Exception as e:
         print(f"[Audio] Error combining chunks: {e}")
-        return combined  # Return raw data as fallback
-
-
-def extract_tts_summary(response: str) -> str:
-    """
-    Extract a short summary from LLM response for TTS.
-    Keeps the spoken response concise.
-    """
-    import re
-
-    if not response or not response.strip():
-        return ""
-
-    text = response.strip()
-
-    # Remove common reasoning tags that some models include.
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"<\/?analysis>", "", text, flags=re.IGNORECASE)
-
-    # Prefer ANALYSIS section when present.
-    analysis_match = re.search(
-        r"ANALYSIS:\s*\n?(.+?)(?=\n\s*ADVICE:|\n\s*SCORES:|$)",
-        text,
-        re.IGNORECASE | re.DOTALL
-    )
-    if analysis_match:
-        analysis_text = " ".join(analysis_match.group(1).split())
-        if analysis_text:
-            return analysis_text
-
-    # If no analysis block, collect meaningful lines (including bullet advice text).
-    lines = text.split("\n")
-    candidate_lines = []
-
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-
-        # Strip markdown bullet/numbering while keeping content.
-        line = re.sub(r"^[-*•]\s+", "", line)
-        line = re.sub(r"^\d+[.)]\s+", "", line)
-
-        # Skip pure headers or score lines.
-        if re.match(r"^(SCORES|ANALYSIS|ADVICE):?$", line, re.IGNORECASE):
-            continue
-        if re.match(r"^(Clarity|Language|Confidence|Topic Relevance|Filler\s*Words?)\s*:\s*\d+\s*/\s*10\s*$", line, re.IGNORECASE):
-            continue
-
-        # Skip markdown formatting lines.
-        if re.match(r"^[#`*_\-]+$", line):
-            continue
-
-        if len(line) >= 8:
-            candidate_lines.append(line)
-        if len(candidate_lines) >= 2:
-            break
-
-    if candidate_lines:
-        return " ".join(candidate_lines)
-
-    # Last fallback: speak first one or two non-empty sentences from cleaned text.
-    cleaned = " ".join(text.split())
-    sentences = split_into_sentences(cleaned)
-    if sentences:
-        return " ".join(sentences[:2])
-
-    return cleaned[:220].strip()
+        return combined
 
 
 # ============================================================================
@@ -481,7 +516,6 @@ if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
 
-# Serve frontend files directly
 @app.get("/style.css")
 async def get_css():
     css_path = os.path.join(frontend_dir, "style.css")
@@ -505,8 +539,8 @@ async def get_js():
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("PORT", 8000))
-    host = os.getenv("HOST", "0.0.0.0")
+    port = settings.server.port
+    host = settings.server.host
 
     print(f"Starting server on http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)

@@ -37,6 +37,13 @@ env/
 models/whisper/
 models/piper/*.onnx
 models/piper/*.onnx.json
+models/piper/piper.exe
+models/piper/piper.zip
+models/piper/piper_windows_amd64/
+models/piper/piper_windows_amd64.zip
+models/piper/espeak-ng-data/
+models/piper/test.wav
+models/piper/*.dll
 
 # Temporary files
 *.tmp
@@ -44,6 +51,7 @@ models/piper/*.onnx.json
 *.wav
 *.mp3
 *.webm
+*.cache
 
 # OS
 .DS_Store
@@ -51,6 +59,7 @@ Thumbs.db
 
 # Logs
 *.log
+pip-log.txt
 
 # Environment variables
 .env

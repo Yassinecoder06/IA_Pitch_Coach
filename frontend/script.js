@@ -1,6 +1,7 @@
 /**
  * AI Pitch Coach - Client-Side JavaScript
  * Handles WebSocket communication, audio recording, visualization, and UI updates
+ * Supports multiple LLM providers and coaching modes
  */
 
 // ============================================================================
@@ -53,6 +54,15 @@ const state = {
     audioQueue: [],
     isPlayingAudio: false,
 
+    // Configuration
+    currentProvider: 'ollama',
+    currentModel: null,
+    currentMode: 'pitch_analysis',
+    availableProviders: {},
+
+    // Conversation history (for UI display)
+    conversationHistory: [],
+
     // UI elements (cached)
     elements: {}
 };
@@ -71,11 +81,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize canvas
     initCanvas();
 
+    // Load providers and check status
+    loadProviders();
+
     // Check system status
     checkSystemStatus();
 
     // Initialize WebSocket connection
     initWebSocket();
+
+    // Initialize UI based on mode
+    updateModeUI();
 });
 
 function cacheElements() {
@@ -83,8 +99,15 @@ function cacheElements() {
         // Status indicators
         sttStatus: document.getElementById('sttStatus'),
         llmStatus: document.getElementById('llmStatus'),
+        llmStatusLabel: document.getElementById('llmStatusLabel'),
         ttsStatus: document.getElementById('ttsStatus'),
         wsStatus: document.getElementById('wsStatus'),
+
+        // Configuration
+        providerSelect: document.getElementById('providerSelect'),
+        modelSelect: document.getElementById('modelSelect'),
+        modeSelect: document.getElementById('modeSelect'),
+        resetConversationBtn: document.getElementById('resetConversationBtn'),
 
         // Recording
         recordButton: document.getElementById('recordButton'),
@@ -102,6 +125,7 @@ function cacheElements() {
         transcriptBox: document.getElementById('transcriptBox'),
 
         // Scores
+        scoresSection: document.getElementById('scoresSection'),
         clarityScore: document.getElementById('clarityScore'),
         languageScore: document.getElementById('languageScore'),
         confidenceScore: document.getElementById('confidenceScore'),
@@ -115,6 +139,10 @@ function cacheElements() {
 
         // Feedback
         feedbackBox: document.getElementById('feedbackBox'),
+
+        // History
+        historySection: document.getElementById('historySection'),
+        historyBox: document.getElementById('historyBox'),
 
         // Audio
         audioPlayer: document.getElementById('audioPlayer'),
@@ -135,6 +163,20 @@ function setupEventListeners() {
 
     // Handle window resize for canvas
     window.addEventListener('resize', resizeCanvas);
+
+    // Configuration changes
+    if (state.elements.providerSelect) {
+        state.elements.providerSelect.addEventListener('change', handleProviderChange);
+    }
+    if (state.elements.modelSelect) {
+        state.elements.modelSelect.addEventListener('change', handleModelChange);
+    }
+    if (state.elements.modeSelect) {
+        state.elements.modeSelect.addEventListener('change', handleModeChange);
+    }
+    if (state.elements.resetConversationBtn) {
+        state.elements.resetConversationBtn.addEventListener('click', resetConversation);
+    }
 }
 
 function initCanvas() {
@@ -151,6 +193,188 @@ function resizeCanvas() {
         canvas.width = Math.min(container.offsetWidth - 48, 400);
         canvas.height = 80;
     }
+}
+
+// ============================================================================
+// Provider and Model Loading
+// ============================================================================
+
+async function loadProviders() {
+    try {
+        const response = await fetch('/api/providers');
+        const data = await response.json();
+
+        state.availableProviders = data.providers || {};
+        state.currentProvider = data.default || 'ollama';
+
+        // Populate provider dropdown
+        const providerSelect = state.elements.providerSelect;
+        if (providerSelect) {
+            providerSelect.innerHTML = '';
+
+            // Add local providers first
+            const localProviders = ['ollama'];
+            const cloudProviders = [];
+
+            for (const [name, info] of Object.entries(state.availableProviders)) {
+                if (localProviders.includes(name)) {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = `${info.name || name} (Local)`;
+                    providerSelect.appendChild(option);
+                } else {
+                    cloudProviders.push([name, info]);
+                }
+            }
+
+            // Add cloud providers
+            for (const [name, info] of cloudProviders) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = info.name || name;
+                providerSelect.appendChild(option);
+            }
+
+            // Set current provider
+            providerSelect.value = state.currentProvider;
+
+            // Load models for current provider
+            await loadModelsForProvider(state.currentProvider);
+        }
+
+    } catch (error) {
+        console.error('Failed to load providers:', error);
+    }
+}
+
+async function loadModelsForProvider(provider) {
+    const modelSelect = state.elements.modelSelect;
+    if (!modelSelect) return;
+
+    modelSelect.innerHTML = '<option value="">Loading...</option>';
+
+    try {
+        const response = await fetch(`/api/models/${provider}`);
+        const data = await response.json();
+
+        modelSelect.innerHTML = '';
+
+        const models = data.models || [];
+        if (models.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No models available';
+            modelSelect.appendChild(option);
+        } else {
+            for (const model of models) {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+            }
+            state.currentModel = models[0];
+        }
+
+        // Send config to server
+        sendConfig();
+
+    } catch (error) {
+        console.error('Failed to load models:', error);
+        modelSelect.innerHTML = '<option value="">Error loading models</option>';
+    }
+}
+
+function handleProviderChange(event) {
+    state.currentProvider = event.target.value;
+    loadModelsForProvider(state.currentProvider);
+
+    // Update status label
+    if (state.elements.llmStatusLabel) {
+        const providerInfo = state.availableProviders[state.currentProvider];
+        state.elements.llmStatusLabel.textContent = `AI (${providerInfo?.name || state.currentProvider})`;
+    }
+}
+
+function handleModelChange(event) {
+    state.currentModel = event.target.value;
+    sendConfig();
+}
+
+function handleModeChange(event) {
+    state.currentMode = event.target.value;
+    updateModeUI();
+    sendConfig();
+}
+
+function updateModeUI() {
+    const mode = state.currentMode;
+
+    // Show/hide scores section (only for pitch_analysis mode)
+    if (state.elements.scoresSection) {
+        state.elements.scoresSection.style.display =
+            mode === 'pitch_analysis' ? 'block' : 'none';
+    }
+
+    // Show/hide history section (for interactive modes)
+    if (state.elements.historySection) {
+        state.elements.historySection.style.display =
+            (mode === 'interactive' || mode === 'investor_qa') ? 'block' : 'none';
+    }
+
+    // Update hints based on mode
+    if (state.elements.recordingHint) {
+        const hints = {
+            'pitch_analysis': 'Click the button and speak your pitch clearly',
+            'interactive': 'Share your pitch and get coaching feedback',
+            'investor_qa': 'Practice answering investor questions'
+        };
+        state.elements.recordingHint.textContent = hints[mode] || hints['pitch_analysis'];
+    }
+}
+
+function sendConfig() {
+    if (state.wsConnected) {
+        sendMessage({
+            type: 'config',
+            provider: state.currentProvider,
+            model: state.currentModel,
+            mode: state.currentMode
+        });
+    }
+}
+
+function resetConversation() {
+    state.conversationHistory = [];
+    updateHistoryUI();
+    resetResultsUI();
+
+    if (state.wsConnected) {
+        sendMessage({ type: 'reset' });
+    }
+}
+
+function updateHistoryUI() {
+    const historyBox = state.elements.historyBox;
+    if (!historyBox) return;
+
+    if (state.conversationHistory.length === 0) {
+        historyBox.innerHTML = '<p class="placeholder">Previous turns will appear here...</p>';
+        return;
+    }
+
+    let html = '';
+    for (const turn of state.conversationHistory) {
+        const roleClass = turn.role === 'user' ? 'history-user' : 'history-assistant';
+        const roleLabel = turn.role === 'user' ? 'You' : 'Coach';
+        html += `<div class="history-turn ${roleClass}">
+            <div class="history-role">${roleLabel}</div>
+            <div class="history-content">${escapeHtml(turn.content)}</div>
+        </div>`;
+    }
+    historyBox.innerHTML = html;
+
+    // Scroll to bottom
+    historyBox.scrollTop = historyBox.scrollHeight;
 }
 
 // ============================================================================
@@ -200,6 +424,9 @@ function initWebSocket() {
         state.wsConnected = true;
         state.reconnectAttempts = 0;
         updateStatusIndicator('wsStatus', true);
+
+        // Send initial config
+        sendConfig();
     };
 
     state.ws.onclose = () => {
@@ -241,6 +468,10 @@ function handleWebSocketMessage(event) {
                 handleStatusMessage(message);
                 break;
 
+            case 'config_ack':
+                console.log('Config acknowledged:', message.config);
+                break;
+
             case 'transcript':
                 handleTranscriptMessage(message);
                 break;
@@ -263,6 +494,10 @@ function handleWebSocketMessage(event) {
 
             case 'complete':
                 handleCompleteMessage();
+                break;
+
+            case 'reset_ack':
+                console.log('Conversation reset');
                 break;
 
             case 'error':
@@ -295,6 +530,15 @@ function handleTranscriptMessage(message) {
 
     if (message.final) {
         transcriptBox.innerHTML = `<p class="transcript-text">${escapeHtml(message.text)}</p>`;
+
+        // Add to conversation history for display
+        if (state.currentMode !== 'pitch_analysis') {
+            state.conversationHistory.push({
+                role: 'user',
+                content: message.text
+            });
+            updateHistoryUI();
+        }
     } else {
         // Streaming transcript (if implemented)
         const existing = transcriptBox.querySelector('.transcript-text');
@@ -338,6 +582,18 @@ function handleAnalysisMessage(message) {
         const cursor = feedbackBox.querySelector('.streaming-cursor');
         if (cursor) {
             cursor.remove();
+        }
+
+        // Add assistant response to history for interactive modes
+        if (state.currentMode !== 'pitch_analysis') {
+            const feedbackText = feedbackBox.querySelector('.feedback-text');
+            if (feedbackText) {
+                state.conversationHistory.push({
+                    role: 'assistant',
+                    content: feedbackText.textContent
+                });
+                updateHistoryUI();
+            }
         }
     }
 }
@@ -457,7 +713,13 @@ async function startRecording() {
 
         // Update UI
         updateRecordingUI(true);
-        resetResultsUI();
+        // Don't reset for interactive modes - preserve history
+        if (state.currentMode === 'pitch_analysis') {
+            resetResultsUI();
+        } else {
+            // Just reset current feedback
+            resetCurrentFeedback();
+        }
 
         // Initialize audio visualization
         initAudioVisualization(stream);
@@ -784,7 +1046,14 @@ function updateRecordingUI(isRecording) {
     } else {
         button.classList.remove('recording');
         text.textContent = 'Start Recording';
-        hint.textContent = 'Click the button and speak your pitch clearly';
+
+        // Update hint based on mode
+        const hints = {
+            'pitch_analysis': 'Click the button and speak your pitch clearly',
+            'interactive': 'Share your pitch and get coaching feedback',
+            'investor_qa': 'Practice answering investor questions'
+        };
+        hint.textContent = hints[state.currentMode] || hints['pitch_analysis'];
 
         // Hide visualizer
         if (visualizer) {
@@ -808,6 +1077,28 @@ function resetResultsUI() {
 
     // Reset feedback
     state.elements.feedbackBox.innerHTML = '<p class="placeholder">AI analysis will appear here after you record...</p>';
+
+    // Reset history
+    state.conversationHistory = [];
+    updateHistoryUI();
+
+    // Clear audio queue
+    state.audioQueue = [];
+    state.isPlayingAudio = false;
+}
+
+function resetCurrentFeedback() {
+    // Just reset the current feedback box, not history
+    state.elements.feedbackBox.innerHTML = '<p class="placeholder">AI feedback will appear here...</p>';
+
+    // Reset scores for new turn
+    ['clarity', 'language', 'confidence', 'relevance'].forEach(name => {
+        updateScore(name, 0);
+    });
+
+    // Reset filler words
+    state.elements.fillerCount.textContent = '0';
+    state.elements.fillerDetails.textContent = '';
 
     // Clear audio queue
     state.audioQueue = [];

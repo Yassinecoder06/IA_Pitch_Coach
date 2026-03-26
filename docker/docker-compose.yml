@@ -1,5 +1,6 @@
 # AI Pitch Coach - Docker Compose Configuration
 # Runs the full stack: backend + Ollama LLM server
+# Supports multiple LLM providers via environment variables
 
 version: '3.8'
 
@@ -13,12 +14,29 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # STT Configuration
       - WHISPER_MODEL_SIZE=tiny
       - WHISPER_DEVICE=cpu
       - WHISPER_COMPUTE_TYPE=int8
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=qwen3:0.6b
+      - WHISPER_LANGUAGE=en
       - PRELOAD_STT_MODEL=true
+
+      # Ollama Configuration (Local LLM)
+      - OLLAMA_ENDPOINT=http://ollama:11434
+      - DEFAULT_LLM=ollama
+      - DEFAULT_MODEL=qwen3:0.6b
+
+      # TTS Configuration
+      - PIPER_VOICE=en_US-lessac-medium
+
+      # Cloud LLM Providers (Optional - uncomment and fill in API keys)
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      # - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      # - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      # - GROK_API_KEY=${GROK_API_KEY}
+
     volumes:
       # Persist models to avoid re-downloading
       - whisper-models:/app/models/whisper

@@ -1,9 +1,20 @@
 """
 AI Pitch Coach Backend Package
+==============================
+Modular voice-based pitch coaching system.
+
+Modules:
+- config: Environment-based configuration
+- llm: Multi-provider LLM integration
+- voice: STT, TTS, and voice loop
+- analysis: Pitch analysis and filler detection
 """
 
-from . import stt
-from . import llm
-from . import tts
+__version__ = "2.0.0"
 
-__all__ = ["stt", "llm", "tts"]
+__all__ = [
+    "config",
+    "llm",
+    "voice",
+    "analysis"
+]
