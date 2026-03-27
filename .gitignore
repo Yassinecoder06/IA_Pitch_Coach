@@ -44,6 +44,7 @@ models/piper/piper_windows_amd64.zip
 models/piper/espeak-ng-data/
 models/piper/test.wav
 models/piper/*.dll
+models/piper/*.ort
 
 # Temporary files
 *.tmp
