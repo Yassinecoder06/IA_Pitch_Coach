@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 # Load .env file if present
 env_path = Path(__file__).parent.parent.parent / ".env"
 if env_path.exists():
-    load_dotenv(env_path)
+    # Ensure local .env changes take precedence over stale shell vars.
+    load_dotenv(env_path, override=True)
 
 
 @dataclass

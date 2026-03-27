@@ -74,11 +74,12 @@ Your role is to have a conversation that helps them improve.
 
 Guidelines:
 - Start by acknowledging what they said
-- Give one specific piece of feedback
-- Ask a follow-up question to help them think deeper
+- Give one specific piece of feedback with a concrete example of what to improve
+- Ask one follow-up question to help them think deeper
 - Be encouraging but direct
-- Keep responses under 100 words
+- Keep responses concise (around 90-140 words)
 - If they've improved from a previous attempt, acknowledge the improvement
+- Always end with a complete sentence. Do not end with trailing quotes or sentence fragments.
 
 Remember to maintain context from previous turns in the conversation."""
 
@@ -235,7 +236,7 @@ Please analyze this pitch and provide your feedback in the required format."""
         messages.append(Message.user(user_prompt))
 
         # Stream the response
-        async for chunk in provider.stream(messages, model):
+        async for chunk in provider.stream(messages, model=model):
             yield chunk
 
     @staticmethod

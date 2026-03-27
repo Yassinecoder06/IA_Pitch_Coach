@@ -54,6 +54,14 @@ class STTEngine:
         self.language = settings.stt.language
         self.models_dir = settings.stt.models_dir
 
+    @staticmethod
+    def _cpu_safe_compute_type(compute_type: str) -> str:
+        """Return a compute type that is typically supported on CPU."""
+        normalized = (compute_type or "").strip().lower()
+        if normalized in {"int8", "int16", "float32"}:
+            return normalized
+        return "int8"
+
     def load_model(self) -> bool:
         """
         Load the faster-whisper model.
@@ -68,23 +76,37 @@ class STTEngine:
         if STTEngine._model is not None:
             return True
 
-        try:
-            print(f"[STT] Loading faster-whisper model: {self.model_size}")
-            print(f"[STT] Device: {self.device}, Compute type: {self.compute_type}")
+        requested_device = (self.device or "cpu").strip().lower()
+        primary_device = "cuda" if requested_device in {"gpu", "nvidia", "cuda"} else "cpu"
 
-            STTEngine._model = WhisperModel(
-                self.model_size,
-                device=self.device,
-                compute_type=self.compute_type,
-                cpu_threads=4,
-                download_root=str(self.models_dir) if self.models_dir else None
-            )
-            print("[STT] Model loaded successfully")
-            return True
+        attempts = [(primary_device, self.compute_type)]
+        if primary_device != "cpu":
+            attempts.append(("cpu", self._cpu_safe_compute_type(self.compute_type)))
 
-        except Exception as e:
-            print(f"[STT] Failed to load model: {e}")
-            return False
+        print(f"[STT] Loading faster-whisper model: {self.model_size}")
+
+        last_error: Optional[Exception] = None
+        for device, compute_type in attempts:
+            try:
+                print(f"[STT] Device: {device}, Compute type: {compute_type}")
+                STTEngine._model = WhisperModel(
+                    self.model_size,
+                    device=device,
+                    compute_type=compute_type,
+                    cpu_threads=4,
+                    download_root=str(self.models_dir) if self.models_dir else None
+                )
+                if device != primary_device:
+                    print(f"[STT] Falling back to {device} mode")
+                print("[STT] Model loaded successfully")
+                return True
+            except Exception as e:
+                last_error = e
+                print(f"[STT] Failed to load model on {device}: {e}")
+
+        if last_error:
+            print(f"[STT] Failed to load model: {last_error}")
+        return False
 
     def transcribe(
         self,

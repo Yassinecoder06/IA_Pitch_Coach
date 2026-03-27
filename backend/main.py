@@ -454,14 +454,14 @@ async def process_audio_pipeline(
     tts_available, _ = check_piper_available()
 
     if tts_available:
-        tts_text = PitchAnalyzer.extract_tts_summary(full_response)
+        tts_text = (full_response or "").strip()
         print(f"[Pipeline] TTS text: {tts_text[:100] if tts_text else 'None'}...")
 
         if tts_text:
             await websocket.send_json({"type": "status", "message": "Generating voice response..."})
 
             sentences = split_into_sentences(tts_text)
-            for i, sentence in enumerate(sentences[:3]):
+            for sentence in sentences:
                 audio = synthesize_speech(sentence)
                 if audio:
                     audio_base64 = base64.b64encode(audio).decode("utf-8")

@@ -37,7 +37,7 @@ def load_model() -> WhisperModel:
     global _model
 
     if _model is None:
-        print(f"[STT] Loading faster-whisper model: {MODEL_SIZE}")
+        print(f"[STT] Loading whisper model: {MODEL_SIZE}")
         print(f"[STT] Device: {DEVICE}, Compute type: {COMPUTE_TYPE}")
 
         _model = WhisperModel(

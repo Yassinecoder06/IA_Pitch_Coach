@@ -58,7 +58,7 @@ class BaseProvider:
 		messages: List[Message],
 		model: Optional[str] = None,
 		temperature: float = 0.7,
-		max_tokens: int = 512,
+		max_tokens: Optional[int] = None,
 	) -> AsyncGenerator[str, None]:
 		raise NotImplementedError
 
@@ -67,7 +67,7 @@ class BaseProvider:
 		messages: List[Message],
 		model: Optional[str] = None,
 		temperature: float = 0.7,
-		max_tokens: int = 512,
+		max_tokens: Optional[int] = None,
 	) -> str:
 		chunks: List[str] = []
 		async for chunk in self.stream(messages, model=model, temperature=temperature, max_tokens=max_tokens):
@@ -101,7 +101,7 @@ class OllamaProvider(BaseProvider):
 		messages: List[Message],
 		model: Optional[str] = None,
 		temperature: float = 0.7,
-		max_tokens: int = 512,
+		max_tokens: Optional[int] = None,
 	) -> AsyncGenerator[str, None]:
 		payload = {
 			"model": model or self.default_model,
@@ -109,11 +109,12 @@ class OllamaProvider(BaseProvider):
 			"stream": True,
 			"options": {
 				"temperature": temperature,
-				"num_predict": max_tokens,
 				"top_p": 1.0,
 				"num_ctx": 2048,
 			},
 		}
+		if max_tokens is not None:
+			payload["options"]["num_predict"] = max_tokens
 
 		try:
 			async with httpx.AsyncClient() as client:
@@ -204,7 +205,7 @@ class GoogleProvider(BaseProvider):
 		messages: List[Message],
 		model: Optional[str] = None,
 		temperature: float = 0.7,
-		max_tokens: int = 512,
+		max_tokens: Optional[int] = None,
 	) -> AsyncGenerator[str, None]:
 		if not self.api_key:
 			yield "Error: Google API key not configured. Set GOOGLE_API_KEY in .env"
@@ -217,10 +218,11 @@ class GoogleProvider(BaseProvider):
 			"contents": contents,
 			"generationConfig": {
 				"temperature": temperature,
-				"maxOutputTokens": max_tokens,
 				"topP": 1.0,
 			},
 		}
+		if max_tokens is not None:
+			payload["generationConfig"]["maxOutputTokens"] = max_tokens
 		if system_instruction:
 			payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
 
@@ -331,7 +333,7 @@ class OpenAICompatibleProvider(BaseProvider):
 		messages: List[Message],
 		model: Optional[str] = None,
 		temperature: float = 0.7,
-		max_tokens: int = 512,
+		max_tokens: Optional[int] = None,
 	) -> AsyncGenerator[str, None]:
 		chosen_model = model or self.default_model
 		if not chosen_model:
@@ -342,9 +344,10 @@ class OpenAICompatibleProvider(BaseProvider):
 			"model": chosen_model,
 			"messages": [m.to_dict() if isinstance(m, Message) else m for m in messages],
 			"temperature": temperature,
-			"max_tokens": max_tokens,
 			"stream": True,
 		}
+		if max_tokens is not None:
+			payload["max_tokens"] = max_tokens
 
 		try:
 			async with httpx.AsyncClient() as client:
@@ -448,7 +451,7 @@ class AnthropicProvider(BaseProvider):
 		messages: List[Message],
 		model: Optional[str] = None,
 		temperature: float = 0.7,
-		max_tokens: int = 512,
+		max_tokens: Optional[int] = None,
 	) -> AsyncGenerator[str, None]:
 		if not self.api_key:
 			yield "Error: Anthropic API key not configured"
@@ -460,10 +463,11 @@ class AnthropicProvider(BaseProvider):
 		payload: Dict[str, Any] = {
 			"model": chosen_model,
 			"messages": chat_messages,
-			"max_tokens": max_tokens,
 			"temperature": temperature,
 			"stream": True,
 		}
+		if max_tokens is not None:
+			payload["max_tokens"] = max_tokens
 		if system_prompt:
 			payload["system"] = system_prompt
 
@@ -556,7 +560,7 @@ class AzureOpenAIProvider(BaseProvider):
 		messages: List[Message],
 		model: Optional[str] = None,
 		temperature: float = 0.7,
-		max_tokens: int = 512,
+		max_tokens: Optional[int] = None,
 	) -> AsyncGenerator[str, None]:
 		if not self.api_key or not self.endpoint:
 			yield "Error: Azure OpenAI endpoint or API key not configured"
@@ -570,9 +574,10 @@ class AzureOpenAIProvider(BaseProvider):
 		payload = {
 			"messages": [m.to_dict() if isinstance(m, Message) else m for m in messages],
 			"temperature": temperature,
-			"max_tokens": max_tokens,
 			"stream": True,
 		}
+		if max_tokens is not None:
+			payload["max_tokens"] = max_tokens
 
 		try:
 			async with httpx.AsyncClient() as client:
