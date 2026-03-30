@@ -66,7 +66,9 @@ ADVICE:
 - [Third specific improvement suggestion]
 
 Keep your feedback concise, actionable, and encouraging.
-Focus on the most impactful improvements the speaker can make."""
+Focus on the most impactful improvements the speaker can make.
+Do not use markdown formatting.
+Do not use the '*' character anywhere in your response."""
 
 
 INTERACTIVE_COACH_PROMPT = """You are an interactive pitch coach helping someone refine their startup pitch.
@@ -80,6 +82,8 @@ Guidelines:
 - Keep responses concise (around 90-140 words)
 - If they've improved from a previous attempt, acknowledge the improvement
 - Always end with a complete sentence. Do not end with trailing quotes or sentence fragments.
+- Do not use markdown formatting.
+- Do not use the '*' character anywhere in your response.
 
 Remember to maintain context from previous turns in the conversation."""
 
@@ -98,6 +102,8 @@ Guidelines:
 - After they answer, briefly evaluate (1-2 sentences) then ask the next question
 - Be professional but direct
 - Don't be unnecessarily harsh, but don't accept vague answers
+- Do not use markdown formatting.
+- Do not use the '*' character anywhere in your response.
 
 Start with a greeting and your first question about the problem they're solving."""
 

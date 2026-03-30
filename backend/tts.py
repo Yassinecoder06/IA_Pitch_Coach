@@ -133,6 +133,9 @@ def split_into_sentences(text: str) -> List[str]:
     if not text.strip():
         return []
 
+    # Remove markdown emphasis/list asterisks so TTS doesn't speak "asterisk".
+    text = text.replace("*", "")
+
     # Split on sentence-ending punctuation
     sentences = re.split(r'(?<=[.!?])\s+', text)
 

@@ -76,6 +76,13 @@ app.add_middleware(
 startup_complete = False
 
 
+def _sanitize_llm_output_text(text: str) -> str:
+    """Sanitize model output so TTS does not read markdown symbols aloud."""
+    if not text:
+        return ""
+    return text.replace("*", "")
+
+
 # ============================================================================
 # Startup Event - Load Models Once
 # ============================================================================
@@ -420,12 +427,13 @@ async def process_audio_pipeline(
         mode=config["mode"],
         conversation_history=conversation_history
     ):
-        full_response += chunk
+        clean_chunk = _sanitize_llm_output_text(chunk)
+        full_response += clean_chunk
 
         # Send streaming chunk
         await websocket.send_json({
             "type": "analysis",
-            "text": chunk,
+            "text": clean_chunk,
             "streaming": True
         })
 
