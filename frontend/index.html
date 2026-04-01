@@ -55,12 +55,25 @@
                         <label for="modeSelect">Coaching Mode</label>
                         <select id="modeSelect">
                             <option value="pitch_analysis">Pitch Analysis</option>
-                            <option value="interactive">Interactive Coaching</option>
+                            <option value="interactive-coaching">Interactive Coaching</option>
                             <option value="investor_qa">Investor Q&A</option>
+                            <option value="conversation">Conversation</option>
                         </select>
                     </div>
                 </div>
                 <div class="config-actions">
+                    <select id="sessionSelect" title="Open a saved session">
+                        <option value="">No saved sessions</option>
+                    </select>
+                    <button class="btn-secondary" id="newSessionBtn" title="Create a new session">
+                        New Session
+                    </button>
+                    <button class="btn-secondary" id="resumeSessionBtn" title="Resume selected session">
+                        Resume Session
+                    </button>
+                    <button class="btn-secondary" id="saveSummaryBtn" title="Generate markdown summary now">
+                        Save Summary
+                    </button>
                     <button class="btn-secondary" id="resetConversationBtn" title="Clear conversation history">
                         Reset Conversation
                     </button>
@@ -146,6 +159,19 @@
                 <h2>AI Feedback</h2>
                 <div class="feedback-box" id="feedbackBox">
                     <p class="placeholder">AI analysis will appear here after you record...</p>
+                </div>
+                <div class="feedback-actions">
+                    <button class="btn-secondary" id="readAloudBtn" disabled>
+                        Read Aloud
+                    </button>
+                </div>
+            </section>
+
+            <section class="text-input-section">
+                <h2>Text Input</h2>
+                <div class="text-input-row">
+                    <textarea id="textInput" placeholder="Type a message or pitch paragraph..."></textarea>
+                    <button class="record-button text-send-button" id="textSendButton">Send Text</button>
                 </div>
             </section>
 

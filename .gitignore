@@ -35,17 +35,7 @@ env/
 
 # Models (large files)
 models/whisper/
-models/piper/*.onnx
-models/piper/*.onnx.json
-models/piper/piper.exe
-models/piper/piper.zip
-models/piper/piper_windows_amd64/
-models/piper/piper_windows_amd64.zip
-models/piper/espeak-ng-data/
-models/piper/test.wav
-models/piper/*.dll
-models/piper/*.ort
-
+models/piper/
 # Temporary files
 *.tmp
 *.temp

@@ -16,7 +16,9 @@ class CoachingMode(str, Enum):
     """Available coaching modes."""
     PITCH_ANALYSIS = "pitch_analysis"
     INTERACTIVE = "interactive"
+    INTERACTIVE_COACHING = "interactive-coaching"
     INVESTOR_QA = "investor_qa"
+    CONVERSATION = "conversation"
 
 
 @dataclass
@@ -108,6 +110,19 @@ Guidelines:
 Start with a greeting and your first question about the problem they're solving."""
 
 
+CONVERSATION_MODE_PROMPT = """You are a supportive speaking practice partner.
+Your role is to keep a natural conversation while coaching communication quality.
+
+Guidelines:
+- Respond naturally and clearly, like a conversation partner
+- Provide concise communication coaching inline when useful
+- Highlight one practical improvement when the user asks for feedback
+- Keep responses complete and polished
+- Do not use markdown formatting
+- Do not use the '*' character anywhere in your response
+"""
+
+
 class PitchAnalyzer:
     """
     Analyzes pitches using configured LLM provider.
@@ -167,6 +182,8 @@ class PitchAnalyzer:
         prompts = {
             CoachingMode.PITCH_ANALYSIS: PITCH_COACH_SYSTEM_PROMPT,
             CoachingMode.INTERACTIVE: INTERACTIVE_COACH_PROMPT,
+            CoachingMode.INTERACTIVE_COACHING: INTERACTIVE_COACH_PROMPT,
+            CoachingMode.CONVERSATION: CONVERSATION_MODE_PROMPT,
             CoachingMode.INVESTOR_QA: INVESTOR_QA_PROMPT
         }
         return prompts.get(mode, PITCH_COACH_SYSTEM_PROMPT)
@@ -177,7 +194,10 @@ class PitchAnalyzer:
         filler_count: int = 0,
         word_count: int = 0,
         mode: CoachingMode = CoachingMode.PITCH_ANALYSIS,
-        conversation_history: Optional[List[Dict]] = None
+        conversation_history: Optional[List[Dict]] = None,
+        context_md: str = "",
+        recent_messages: Optional[List[Dict]] = None,
+        speech_metrics: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Analyze a pitch transcript and stream feedback.
@@ -187,7 +207,10 @@ class PitchAnalyzer:
             filler_count: Number of filler words detected
             word_count: Total word count
             mode: Coaching mode to use
-            conversation_history: Previous conversation turns (for interactive modes)
+            conversation_history: Previous conversation turns (legacy support)
+            context_md: Compressed session markdown memory
+            recent_messages: Last N turns for bounded context windows
+            speech_metrics: Optional speech analysis metrics
 
         Yields:
             Text chunks as they're generated
@@ -203,9 +226,19 @@ class PitchAnalyzer:
         # Build messages
         messages = [Message.system(system_prompt)]
 
-        # Add conversation history if provided
-        if conversation_history:
-            for turn in conversation_history:
+        # Add markdown memory first, then short message window.
+        if context_md and context_md.strip():
+            messages.append(
+                Message.system(
+                    f"Session memory markdown (compressed context):\n{context_md.strip()}"
+                )
+            )
+
+        window_messages = recent_messages if recent_messages is not None else conversation_history
+
+        # Add short context window if provided.
+        if window_messages:
+            for turn in window_messages:
                 role = turn.get("role", "user")
                 content = turn.get("content", "")
                 if role == "user":
@@ -215,18 +248,31 @@ class PitchAnalyzer:
 
         # Build user prompt based on mode
         if mode == CoachingMode.PITCH_ANALYSIS:
+            metric_lines = [
+                f"- Word count: {word_count}",
+                f"- Filler words detected: {filler_count}",
+            ]
+            if speech_metrics:
+                metric_lines.extend([
+                    f"- Words per minute: {speech_metrics.get('words_per_minute', 0):.2f}",
+                    f"- Pause frequency (per minute): {speech_metrics.get('pause_frequency', 0):.2f}",
+                    f"- Average pause duration (s): {speech_metrics.get('pause_duration', 0):.2f}",
+                    f"- Long pauses (>1.5s): {int(speech_metrics.get('long_pause_count', 0))}",
+                    f"- Rhythm score: {speech_metrics.get('rhythm_score', 0):.2f}",
+                    f"- Energy variation: {speech_metrics.get('energy_variation', 0):.4f}",
+                ])
+
             user_prompt = f"""Analyze this pitch transcript and provide structured feedback.
 
 TRANSCRIPT:
 {transcript}
 
 METRICS:
-- Word count: {word_count}
-- Filler words detected: {filler_count}
+{chr(10).join(metric_lines)}
 
 Please analyze this pitch and provide your feedback in the required format."""
 
-        elif mode == CoachingMode.INTERACTIVE:
+        elif mode in (CoachingMode.INTERACTIVE, CoachingMode.INTERACTIVE_COACHING, CoachingMode.CONVERSATION):
             user_prompt = transcript
 
         elif mode == CoachingMode.INVESTOR_QA:

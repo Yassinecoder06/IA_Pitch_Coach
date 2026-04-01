@@ -11,11 +11,17 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file if present
-env_path = Path(__file__).parent.parent.parent / ".env"
+# Load environment files with local override priority:
+# 1) .env.local (primary for machine/local secrets)
+# 2) .env (fallback only for missing keys)
+root_dir = Path(__file__).parent.parent.parent
+env_local_path = root_dir / ".env.local"
+env_path = root_dir / ".env"
+
+if env_local_path.exists():
+    load_dotenv(env_local_path, override=True)
 if env_path.exists():
-    # Ensure local .env changes take precedence over stale shell vars.
-    load_dotenv(env_path, override=True)
+    load_dotenv(env_path, override=False)
 
 
 @dataclass

@@ -187,9 +187,20 @@ section h2 {
 .config-actions {
     display: flex;
     justify-content: flex-end;
+    gap: 0.5rem;
     margin-top: 1rem;
     padding-top: 1rem;
     border-top: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+.config-actions select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-white);
+    color: var(--text-primary);
+    min-width: 220px;
 }
 
 .btn-secondary {
@@ -466,6 +477,48 @@ section h2 {
     vertical-align: text-bottom;
 }
 
+.feedback-actions {
+    margin-top: 0.75rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-secondary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.text-input-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+.text-input-row textarea {
+    flex: 1;
+    min-height: 90px;
+    resize: vertical;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.75rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    font-family: inherit;
+}
+
+.text-input-row textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.text-send-button {
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+    align-self: flex-end;
+}
+
 @keyframes blink {
     0%, 50% {
         opacity: 1;
@@ -630,6 +683,10 @@ section h2 {
     .record-button {
         padding: 0.875rem 2rem;
         font-size: 1rem;
+    }
+
+    .text-input-row {
+        flex-direction: column;
     }
 
     .scores-grid {

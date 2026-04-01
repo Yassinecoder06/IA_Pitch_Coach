@@ -27,6 +27,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,12 +46,14 @@ from backend.voice.voice_loop import VoiceLoop, VoiceLoopState, VoiceLoopConfig
 
 # Import analysis modules
 from backend.analysis.filler_detection import count_filler_words, get_total_filler_count
+from backend.analysis.speech_metrics import analyze_speech_metrics
 from backend.analysis.pitch_analysis import (
     PitchAnalyzer,
     CoachingMode,
     PITCH_COACH_SYSTEM_PROMPT,
     parse_scores_from_response
 )
+from backend.storage.session_manager import SessionManager
 
 # Import LLM modules
 from backend.llm import get_provider, list_providers, get_available_providers
@@ -74,6 +77,8 @@ app.add_middleware(
 
 # Global state
 startup_complete = False
+session_manager = SessionManager()
+SESSION_CONTEXT_WINDOW = int(os.getenv("SESSION_CONTEXT_WINDOW", "8"))
 
 
 def _sanitize_llm_output_text(text: str) -> str:
@@ -81,6 +86,33 @@ def _sanitize_llm_output_text(text: str) -> str:
     if not text:
         return ""
     return text.replace("*", "")
+
+
+def _parse_mode(mode_str: str) -> CoachingMode:
+    aliases = {
+        "interactive": CoachingMode.INTERACTIVE,
+        "interactive-coaching": CoachingMode.INTERACTIVE_COACHING,
+        "interactive_coaching": CoachingMode.INTERACTIVE_COACHING,
+        "pitch_analysis": CoachingMode.PITCH_ANALYSIS,
+        "pitch-analysis": CoachingMode.PITCH_ANALYSIS,
+        "investor_qa": CoachingMode.INVESTOR_QA,
+        "investor-qa": CoachingMode.INVESTOR_QA,
+        "conversation": CoachingMode.CONVERSATION,
+    }
+    return aliases.get((mode_str or "").strip().lower(), CoachingMode.PITCH_ANALYSIS)
+
+
+class CreateSessionRequest(BaseModel):
+    title: str = "Startup Pitch Practice"
+    mode: str = CoachingMode.PITCH_ANALYSIS.value
+
+
+class UpdateSessionModeRequest(BaseModel):
+    mode: str
+
+
+class ReadAloudRequest(BaseModel):
+    text: str
 
 
 # ============================================================================
@@ -229,6 +261,77 @@ async def get_settings():
     return settings.to_dict()
 
 
+@app.get("/api/sessions")
+async def list_sessions(limit: int = 50):
+    if not session_manager.enabled:
+        return {"enabled": False, "sessions": []}
+    return {"enabled": True, "sessions": session_manager.list_sessions(limit=limit)}
+
+
+@app.post("/api/sessions")
+async def create_session(payload: CreateSessionRequest):
+    if not session_manager.enabled:
+        raise HTTPException(status_code=503, detail="Supabase is not configured")
+
+    created = session_manager.create_session(payload.title, _parse_mode(payload.mode).value)
+    if not created:
+        raise HTTPException(status_code=500, detail="Failed to create session")
+    return created
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str, message_limit: int = 100):
+    if not session_manager.enabled:
+        raise HTTPException(status_code=503, detail="Supabase is not configured")
+
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return {
+        "session": session,
+        "messages": session_manager.get_recent_messages(session_id, limit=message_limit),
+    }
+
+
+@app.patch("/api/sessions/{session_id}/mode")
+async def update_session_mode(session_id: str, payload: UpdateSessionModeRequest):
+    if not session_manager.enabled:
+        raise HTTPException(status_code=503, detail="Supabase is not configured")
+
+    session_manager.update_mode(session_id, _parse_mode(payload.mode).value)
+    return {"ok": True}
+
+
+@app.post("/api/sessions/{session_id}/summary")
+async def summarize_session(session_id: str):
+    if not session_manager.enabled:
+        raise HTTPException(status_code=503, detail="Supabase is not configured")
+
+    summary_md = session_manager.generate_session_summary_markdown(session_id)
+    if not summary_md:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session_manager.update_context_markdown(session_id, summary_md)
+    return {"session_id": session_id, "context_md": summary_md}
+
+
+@app.post("/api/read-aloud")
+async def read_aloud(payload: ReadAloudRequest):
+    tts_available, tts_msg = check_piper_available()
+    if not tts_available:
+        raise HTTPException(status_code=503, detail=tts_msg)
+
+    audio = synthesize_speech(payload.text)
+    if not audio:
+        raise HTTPException(status_code=500, detail="Failed to synthesize speech")
+
+    return {
+        "format": "wav",
+        "data": base64.b64encode(audio).decode("utf-8")
+    }
+
+
 # ============================================================================
 # WebSocket Handler - Main Communication Channel
 # ============================================================================
@@ -261,6 +364,9 @@ async def websocket_endpoint(websocket: WebSocket):
         "mode": CoachingMode.PITCH_ANALYSIS
     }
     conversation_history: List[Dict] = []
+    current_session_id: Optional[str] = None
+    session_context_md: str = ""
+    latest_assistant_response: str = ""
 
     try:
         while True:
@@ -276,17 +382,59 @@ async def websocket_endpoint(websocket: WebSocket):
                 if "model" in message:
                     session_config["model"] = message["model"]
                 if "mode" in message:
-                    mode_str = message["mode"]
-                    try:
-                        session_config["mode"] = CoachingMode(mode_str)
-                    except ValueError:
-                        session_config["mode"] = CoachingMode.PITCH_ANALYSIS
+                    session_config["mode"] = _parse_mode(message["mode"])
+                if "session_id" in message:
+                    current_session_id = message.get("session_id")
+                    if current_session_id and session_manager.enabled:
+                        session_manager.update_mode(current_session_id, session_config["mode"].value)
                 print(f"[WebSocket] Config updated: {session_config}")
                 await websocket.send_json({"type": "config_ack", "config": {
                     "provider": session_config["provider"],
                     "model": session_config["model"],
-                    "mode": session_config["mode"].value
+                    "mode": session_config["mode"].value,
+                    "session_id": current_session_id,
                 }})
+
+            elif msg_type == "create_session":
+                if not session_manager.enabled:
+                    await websocket.send_json({"type": "error", "message": "Supabase is not configured"})
+                    continue
+                title = (message.get("title") or "Startup Pitch Practice").strip()
+                created = session_manager.create_session(title=title, mode=session_config["mode"].value)
+                if not created:
+                    await websocket.send_json({"type": "error", "message": "Failed to create session"})
+                    continue
+                current_session_id = created.get("id")
+                conversation_history = []
+                session_context_md = ""
+                await websocket.send_json({"type": "session_created", "session": created})
+
+            elif msg_type == "resume_session":
+                requested_session_id = message.get("session_id")
+                if not requested_session_id:
+                    await websocket.send_json({"type": "error", "message": "session_id is required"})
+                    continue
+                if not session_manager.enabled:
+                    await websocket.send_json({"type": "error", "message": "Supabase is not configured"})
+                    continue
+
+                context = session_manager.build_context_window(requested_session_id, last_n=SESSION_CONTEXT_WINDOW)
+                if not context:
+                    await websocket.send_json({"type": "error", "message": "Session not found"})
+                    continue
+
+                current_session_id = requested_session_id
+                session_config["mode"] = _parse_mode(context.mode)
+                session_context_md = context.context_md
+                conversation_history = context.recent_messages
+
+                await websocket.send_json({
+                    "type": "session_resumed",
+                    "session_id": current_session_id,
+                    "mode": session_config["mode"].value,
+                    "context_md": session_context_md,
+                    "history": conversation_history,
+                })
 
             elif msg_type == "start":
                 # Start new recording session
@@ -309,12 +457,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"[WebSocket] Recording stopped, processing {len(audio_chunks)} chunks")
 
                 if audio_chunks:
-                    await process_audio_pipeline(
+                    latest_assistant_response = await process_audio_pipeline(
                         websocket,
                         audio_chunks,
                         session_config,
-                        conversation_history
+                        conversation_history,
+                        current_session_id,
+                        session_context_md,
                     )
+                    if current_session_id and session_manager.enabled:
+                        refreshed = session_manager.build_context_window(current_session_id, last_n=SESSION_CONTEXT_WINDOW)
+                        if refreshed:
+                            session_context_md = refreshed.context_md
                 else:
                     await websocket.send_json({
                         "type": "error",
@@ -324,7 +478,36 @@ async def websocket_endpoint(websocket: WebSocket):
             elif msg_type == "reset":
                 # Reset conversation history
                 conversation_history = []
+                session_context_md = ""
                 await websocket.send_json({"type": "reset_ack"})
+
+            elif msg_type == "text":
+                text_content = (message.get("text") or "").strip()
+                if not text_content:
+                    await websocket.send_json({"type": "error", "message": "Text message is empty"})
+                    continue
+
+                latest_assistant_response = await process_text_pipeline(
+                    websocket,
+                    text_content,
+                    session_config,
+                    conversation_history,
+                    current_session_id,
+                    session_context_md,
+                )
+                if current_session_id and session_manager.enabled:
+                    refreshed = session_manager.build_context_window(current_session_id, last_n=SESSION_CONTEXT_WINDOW)
+                    if refreshed:
+                        session_context_md = refreshed.context_md
+
+            elif msg_type == "read_aloud":
+                tts_text = (message.get("text") or latest_assistant_response or "").strip()
+                if not tts_text:
+                    await websocket.send_json({"type": "error", "message": "No text available for read aloud"})
+                    continue
+
+                await stream_tts_for_text(websocket, tts_text)
+                await websocket.send_json({"type": "read_aloud_complete"})
 
             elif msg_type == "ping":
                 # Keep-alive ping
@@ -344,8 +527,10 @@ async def process_audio_pipeline(
     websocket: WebSocket,
     audio_chunks: List[bytes],
     config: Dict,
-    conversation_history: List[Dict]
-):
+    conversation_history: List[Dict],
+    session_id: Optional[str],
+    session_context_md: str,
+) -> str:
     """
     Process audio through the full pipeline:
     1. Combine audio chunks
@@ -364,7 +549,7 @@ async def process_audio_pipeline(
             "type": "error",
             "message": "Failed to process audio"
         })
-        return
+        return ""
 
     # Step 2: Transcribe audio
     print("[Pipeline] Transcribing audio...")
@@ -379,14 +564,14 @@ async def process_audio_pipeline(
             "type": "error",
             "message": f"Transcription failed: {e}"
         })
-        return
+        return ""
 
     if not transcript.strip():
         await websocket.send_json({
             "type": "error",
             "message": "No speech detected in audio"
         })
-        return
+        return ""
 
     # Send transcript to client
     await websocket.send_json({
@@ -400,6 +585,7 @@ async def process_audio_pipeline(
     filler_details = count_filler_words(transcript)
     total_fillers = sum(filler_details.values())
     word_count = len(transcript.split())
+    speech_metrics = analyze_speech_metrics(combined_audio, transcript, filler_count=total_fillers)
 
     await websocket.send_json({
         "type": "filler_words",
@@ -407,6 +593,7 @@ async def process_audio_pipeline(
         "details": filler_details,
         "word_count": word_count
     })
+    await websocket.send_json({"type": "speech_metrics", "data": speech_metrics})
 
     # Step 4: Analyze with LLM (streaming)
     print(f"[Pipeline] Analyzing with {config['provider']}...")
@@ -425,7 +612,10 @@ async def process_audio_pipeline(
         filler_count=total_fillers,
         word_count=word_count,
         mode=config["mode"],
-        conversation_history=conversation_history
+        conversation_history=conversation_history,
+        context_md=session_context_md,
+        recent_messages=conversation_history[-SESSION_CONTEXT_WINDOW:],
+        speech_metrics=speech_metrics,
     ):
         clean_chunk = _sanitize_llm_output_text(chunk)
         full_response += clean_chunk
@@ -449,6 +639,23 @@ async def process_audio_pipeline(
     conversation_history.append({"role": "user", "content": transcript})
     conversation_history.append({"role": "assistant", "content": full_response})
 
+    if session_id and session_manager.enabled:
+        session_manager.append_message(
+            session_id,
+            role="user",
+            content=transcript,
+            transcript=transcript,
+        )
+        session_manager.append_message(
+            session_id,
+            role="assistant",
+            content=full_response,
+        )
+        session_manager.append_speech_metrics(session_id, speech_metrics)
+        context_md = session_manager.generate_session_summary_markdown(session_id)
+        if context_md:
+            session_manager.update_context_markdown(session_id, context_md)
+
     # Parse and send scores (for pitch analysis mode)
     if config["mode"] == CoachingMode.PITCH_ANALYSIS:
         scores = parse_scores_from_response(full_response)
@@ -457,31 +664,103 @@ async def process_audio_pipeline(
             "data": scores
         })
 
-    # Step 5: Generate TTS for response
-    print("[Pipeline] Generating speech response...")
-    tts_available, _ = check_piper_available()
-
-    if tts_available:
-        tts_text = (full_response or "").strip()
-        print(f"[Pipeline] TTS text: {tts_text[:100] if tts_text else 'None'}...")
-
-        if tts_text:
-            await websocket.send_json({"type": "status", "message": "Generating voice response..."})
-
-            sentences = split_into_sentences(tts_text)
-            for sentence in sentences:
-                audio = synthesize_speech(sentence)
-                if audio:
-                    audio_base64 = base64.b64encode(audio).decode("utf-8")
-                    await websocket.send_json({
-                        "type": "audio",
-                        "data": audio_base64,
-                        "format": "wav"
-                    })
+    # Step 5: Generate TTS only for conversation mode by default.
+    if config["mode"] == CoachingMode.CONVERSATION:
+        await stream_tts_for_text(websocket, full_response)
 
     # Signal completion
     await websocket.send_json({"type": "complete"})
     print("[Pipeline] Processing complete")
+    return full_response
+
+
+async def process_text_pipeline(
+    websocket: WebSocket,
+    text: str,
+    config: Dict,
+    conversation_history: List[Dict],
+    session_id: Optional[str],
+    session_context_md: str,
+) -> str:
+    """Process direct text input with the same LLM/session flow as voice."""
+    await websocket.send_json({
+        "type": "transcript",
+        "text": text,
+        "confidence": 1.0,
+        "final": True,
+    })
+
+    filler_details = count_filler_words(text)
+    total_fillers = sum(filler_details.values())
+    word_count = len(text.split())
+
+    await websocket.send_json({
+        "type": "filler_words",
+        "count": total_fillers,
+        "details": filler_details,
+        "word_count": word_count
+    })
+
+    analyzer = PitchAnalyzer(provider_name=config["provider"], model=config["model"])
+    full_response = ""
+
+    async for chunk in analyzer.analyze(
+        text,
+        filler_count=total_fillers,
+        word_count=word_count,
+        mode=config["mode"],
+        conversation_history=conversation_history,
+        context_md=session_context_md,
+        recent_messages=conversation_history[-SESSION_CONTEXT_WINDOW:],
+        speech_metrics=None,
+    ):
+        clean_chunk = _sanitize_llm_output_text(chunk)
+        full_response += clean_chunk
+        await websocket.send_json({"type": "analysis", "text": clean_chunk, "streaming": True})
+
+    await websocket.send_json({"type": "analysis", "text": "", "streaming": False, "complete": True})
+
+    conversation_history.append({"role": "user", "content": text})
+    conversation_history.append({"role": "assistant", "content": full_response})
+
+    if session_id and session_manager.enabled:
+        session_manager.append_message(session_id, role="user", content=text, transcript=None)
+        session_manager.append_message(session_id, role="assistant", content=full_response)
+        context_md = session_manager.generate_session_summary_markdown(session_id)
+        if context_md:
+            session_manager.update_context_markdown(session_id, context_md)
+
+    if config["mode"] == CoachingMode.PITCH_ANALYSIS:
+        scores = parse_scores_from_response(full_response)
+        await websocket.send_json({"type": "scores", "data": scores})
+
+    if config["mode"] == CoachingMode.CONVERSATION:
+        await stream_tts_for_text(websocket, full_response)
+
+    await websocket.send_json({"type": "complete"})
+    return full_response
+
+
+async def stream_tts_for_text(websocket: WebSocket, text: str):
+    tts_available, _ = check_piper_available()
+    if not tts_available:
+        return
+
+    tts_text = (text or "").strip()
+    if not tts_text:
+        return
+
+    await websocket.send_json({"type": "status", "message": "Generating voice response..."})
+
+    for sentence in split_into_sentences(tts_text):
+        audio = synthesize_speech(sentence)
+        if audio:
+            audio_base64 = base64.b64encode(audio).decode("utf-8")
+            await websocket.send_json({
+                "type": "audio",
+                "data": audio_base64,
+                "format": "wav"
+            })
 
 
 def combine_audio_chunks(chunks: List[bytes]) -> Optional[bytes]:

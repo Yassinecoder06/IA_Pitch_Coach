@@ -58,6 +58,9 @@ const state = {
     currentProvider: 'ollama',
     currentModel: null,
     currentMode: 'pitch_analysis',
+    currentSessionId: null,
+    sessions: [],
+    lastAssistantResponse: '',
     availableProviders: {},
 
     // Conversation history (for UI display)
@@ -83,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load providers and check status
     loadProviders();
+    loadSessions();
 
     // Check system status
     checkSystemStatus();
@@ -108,6 +112,10 @@ function cacheElements() {
         modelSelect: document.getElementById('modelSelect'),
         modeSelect: document.getElementById('modeSelect'),
         resetConversationBtn: document.getElementById('resetConversationBtn'),
+        sessionSelect: document.getElementById('sessionSelect'),
+        newSessionBtn: document.getElementById('newSessionBtn'),
+        resumeSessionBtn: document.getElementById('resumeSessionBtn'),
+        saveSummaryBtn: document.getElementById('saveSummaryBtn'),
 
         // Recording
         recordButton: document.getElementById('recordButton'),
@@ -139,6 +147,11 @@ function cacheElements() {
 
         // Feedback
         feedbackBox: document.getElementById('feedbackBox'),
+        readAloudBtn: document.getElementById('readAloudBtn'),
+
+        // Text input
+        textInput: document.getElementById('textInput'),
+        textSendButton: document.getElementById('textSendButton'),
 
         // History
         historySection: document.getElementById('historySection'),
@@ -176,6 +189,28 @@ function setupEventListeners() {
     }
     if (state.elements.resetConversationBtn) {
         state.elements.resetConversationBtn.addEventListener('click', resetConversation);
+    }
+    if (state.elements.newSessionBtn) {
+        state.elements.newSessionBtn.addEventListener('click', createSession);
+    }
+    if (state.elements.resumeSessionBtn) {
+        state.elements.resumeSessionBtn.addEventListener('click', resumeSelectedSession);
+    }
+    if (state.elements.saveSummaryBtn) {
+        state.elements.saveSummaryBtn.addEventListener('click', saveSessionSummary);
+    }
+    if (state.elements.textSendButton) {
+        state.elements.textSendButton.addEventListener('click', sendTextMessage);
+    }
+    if (state.elements.textInput) {
+        state.elements.textInput.addEventListener('keydown', (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                sendTextMessage();
+            }
+        });
+    }
+    if (state.elements.readAloudBtn) {
+        state.elements.readAloudBtn.addEventListener('click', triggerReadAloud);
     }
 }
 
@@ -318,7 +353,7 @@ function updateModeUI() {
     // Show/hide history section (for interactive modes)
     if (state.elements.historySection) {
         state.elements.historySection.style.display =
-            (mode === 'interactive' || mode === 'investor_qa') ? 'block' : 'none';
+            (mode === 'interactive' || mode === 'interactive-coaching' || mode === 'investor_qa' || mode === 'conversation') ? 'block' : 'none';
     }
 
     // Update hints based on mode
@@ -326,7 +361,9 @@ function updateModeUI() {
         const hints = {
             'pitch_analysis': 'Click the button and speak your pitch clearly',
             'interactive': 'Share your pitch and get coaching feedback',
-            'investor_qa': 'Practice answering investor questions'
+            'interactive-coaching': 'Share your pitch and get coaching feedback',
+            'investor_qa': 'Practice answering investor questions',
+            'conversation': 'Practice free discussion and speaking flow'
         };
         state.elements.recordingHint.textContent = hints[mode] || hints['pitch_analysis'];
     }
@@ -338,7 +375,8 @@ function sendConfig() {
             type: 'config',
             provider: state.currentProvider,
             model: state.currentModel,
-            mode: state.currentMode
+            mode: state.currentMode,
+            session_id: state.currentSessionId
         });
     }
 }
@@ -484,6 +522,10 @@ function handleWebSocketMessage(event) {
                 handleAnalysisMessage(message);
                 break;
 
+            case 'speech_metrics':
+                console.log('Speech metrics:', message.data);
+                break;
+
             case 'scores':
                 handleScoresMessage(message);
                 break;
@@ -498,6 +540,18 @@ function handleWebSocketMessage(event) {
 
             case 'reset_ack':
                 console.log('Conversation reset');
+                break;
+
+            case 'session_created':
+                handleSessionCreated(message);
+                break;
+
+            case 'session_resumed':
+                handleSessionResumed(message);
+                break;
+
+            case 'read_aloud_complete':
+                hideLoading();
                 break;
 
             case 'error':
@@ -585,17 +639,42 @@ function handleAnalysisMessage(message) {
         }
 
         // Add assistant response to history for interactive modes
-        if (state.currentMode !== 'pitch_analysis') {
-            const feedbackText = feedbackBox.querySelector('.feedback-text');
-            if (feedbackText) {
-                state.conversationHistory.push({
-                    role: 'assistant',
-                    content: feedbackText.textContent
-                });
-                updateHistoryUI();
-            }
+        const feedbackText = feedbackBox.querySelector('.feedback-text');
+        const assistantText = feedbackText ? (feedbackText.textContent || '') : '';
+        state.lastAssistantResponse = assistantText;
+
+        if (state.currentMode !== 'pitch_analysis' && assistantText) {
+            state.conversationHistory.push({
+                role: 'assistant',
+                content: assistantText
+            });
+            updateHistoryUI();
+        }
+
+        if (state.elements.readAloudBtn) {
+            state.elements.readAloudBtn.disabled = !assistantText;
         }
     }
+}
+
+function handleSessionCreated(message) {
+    state.currentSessionId = message.session?.id || null;
+    sendConfig();
+    loadSessions();
+}
+
+function handleSessionResumed(message) {
+    state.currentSessionId = message.session_id || null;
+    state.currentMode = message.mode || state.currentMode;
+
+    if (state.elements.modeSelect) {
+        state.elements.modeSelect.value = state.currentMode;
+    }
+
+    state.conversationHistory = Array.isArray(message.history) ? message.history : [];
+    updateModeUI();
+    updateHistoryUI();
+    sendConfig();
 }
 
 function handleScoresMessage(message) {
@@ -1051,7 +1130,9 @@ function updateRecordingUI(isRecording) {
         const hints = {
             'pitch_analysis': 'Click the button and speak your pitch clearly',
             'interactive': 'Share your pitch and get coaching feedback',
-            'investor_qa': 'Practice answering investor questions'
+            'interactive-coaching': 'Share your pitch and get coaching feedback',
+            'investor_qa': 'Practice answering investor questions',
+            'conversation': 'Practice free discussion and speaking flow'
         };
         hint.textContent = hints[state.currentMode] || hints['pitch_analysis'];
 
@@ -1085,6 +1166,89 @@ function resetResultsUI() {
     // Clear audio queue
     state.audioQueue = [];
     state.isPlayingAudio = false;
+
+    state.lastAssistantResponse = '';
+    if (state.elements.readAloudBtn) {
+        state.elements.readAloudBtn.disabled = true;
+    }
+}
+
+async function loadSessions() {
+    try {
+        const response = await fetch('/api/sessions');
+        const data = await response.json();
+        state.sessions = data.sessions || [];
+        populateSessionSelect();
+    } catch (error) {
+        console.warn('Session list unavailable:', error);
+    }
+}
+
+function populateSessionSelect() {
+    const select = state.elements.sessionSelect;
+    if (!select) return;
+
+    select.innerHTML = '';
+    if (state.sessions.length === 0) {
+        select.innerHTML = '<option value="">No saved sessions</option>';
+        return;
+    }
+
+    for (const session of state.sessions) {
+        const option = document.createElement('option');
+        option.value = session.id;
+        option.textContent = `${session.title || 'Untitled'} (${session.current_mode || 'pitch_analysis'})`;
+        select.appendChild(option);
+    }
+
+    if (state.currentSessionId) {
+        select.value = state.currentSessionId;
+    }
+}
+
+function createSession() {
+    const title = window.prompt('Session title', 'Startup Pitch Practice');
+    if (title === null) return;
+    sendMessage({ type: 'create_session', title: title.trim() || 'Startup Pitch Practice' });
+}
+
+function resumeSelectedSession() {
+    const sessionId = state.elements.sessionSelect?.value;
+    if (!sessionId) return;
+    sendMessage({ type: 'resume_session', session_id: sessionId });
+}
+
+async function saveSessionSummary() {
+    if (!state.currentSessionId) {
+        alert('Create or resume a session first.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/sessions/${state.currentSessionId}/summary`, { method: 'POST' });
+        if (!response.ok) {
+            throw new Error('Failed to save session summary');
+        }
+    } catch (error) {
+        alert(`Failed to save summary: ${error.message}`);
+    }
+}
+
+function sendTextMessage() {
+    const text = (state.elements.textInput?.value || '').trim();
+    if (!text) return;
+
+    resetCurrentFeedback();
+    showLoading('Analyzing text...');
+    sendMessage({ type: 'text', text });
+    state.elements.textInput.value = '';
+}
+
+function triggerReadAloud() {
+    const text = (state.lastAssistantResponse || '').trim();
+    if (!text) return;
+    showLoading('Generating voice response...');
+    sendMessage({ type: 'read_aloud', text });
 }
 
 function resetCurrentFeedback() {
