@@ -12,8 +12,10 @@ env_path = root_dir / ".env"
 
 if env_local_path.exists():
     load_dotenv(env_local_path, override=True)
-if env_path.exists():
-    load_dotenv(env_path, override=False)
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+elif env_path.exists():
+    load_dotenv(env_path, override=True)
 
 try:
     from supabase import Client, create_client

@@ -1,306 +1,309 @@
 # AI Pitch Coach
 
-A **modular, extensible AI voice coaching platform** for improving startup pitches and public speaking. Supports both local and cloud language models with real-time voice interaction.
+AI Pitch Coach is a modular voice coaching app for practicing startup pitches and public speaking. It combines faster-whisper for speech-to-text, Piper for text-to-speech, multiple LLM providers, and optional Supabase-backed session persistence.
 
-## Features
+## What You Need
 
-### Core Features
-- **Real-time Speech-to-Text** using faster-whisper (4x faster than OpenAI Whisper)
-- **Multi-Provider LLM Support** - OpenAI, Anthropic, Google, Ollama, and more
-- **Text-to-Speech Feedback** using Piper TTS
-- **WebSocket Communication** for low-latency streaming
-- **Structured Scoring** for Clarity, Language, Confidence, and Topic Relevance
-- **Filler Word Detection** (um, uh, like, you know, basically)
+- Python 3.10 or newer
+- 8 GB RAM minimum
+- A browser with microphone access
+- Optional local LLM runtime: Ollama
+- Optional Supabase project for session storage and authentication
 
-### Coaching Modes
-1. **Pitch Analysis Mode** - Get structured feedback with scores and suggestions
-2. **Interactive Coaching Mode** - Refine your pitch through conversation
-3. **Investor Q&A Mode** - Practice answering investor questions
+## What This Project Uses
 
-### Supported LLM Providers
-| Provider | Type | Models |
-|----------|------|--------|
-| Ollama | Local | qwen3, mistral, llama3, etc. |
-| OpenAI | Cloud | GPT-4o, GPT-4 Turbo, GPT-3.5 |
-| Anthropic | Cloud | Claude 3.5, Claude 3 |
-| Google | Cloud | Gemini 2.0, Gemini 1.5 |
-| DeepSeek | Cloud | DeepSeek Chat, Coder |
-| Mistral | Cloud | Mistral Large, Medium, Small |
-| Azure OpenAI | Cloud | Deployed GPT models |
-| Grok | Cloud | Grok 2, Grok 2 Mini |
-
-## System Requirements
-
-- **RAM**: 8GB minimum
-- **CPU**: Any modern processor (GPU optional)
-- **OS**: Windows, macOS, or Linux
-- **Browser**: Chrome, Firefox, Edge (with microphone access)
-
-## Architecture
-
-```
-Browser                           Backend (FastAPI)
-   |                                    |
-   | ---- WebSocket Connection -----> |
-   |                                    |
-   | -- Config (provider/mode) -----> |
-   | -- Audio Chunks (250ms) -------> |
-   |                                    |
-   |                              faster-whisper (STT)
-   |                                    |
-   |                              LLM Provider (configurable)
-   |                              - Ollama (local)
-   |                              - OpenAI
-   |                              - Anthropic
-   |                              - Google
-   |                              - ...
-   |                                    |
-   |                              Piper (TTS)
-   |                                    |
-   | <-- Transcript + Scores --------- |
-   | <-- Streaming AI Feedback ------- |
-   | <-- Audio Response -------------- |
-```
-
-## Project Structure
-
-```
-ai_pitch_coach/
-├── backend/
-│   ├── __init__.py
-│   ├── main.py                 # FastAPI server & WebSocket handler
-│   │
-│   ├── config/
-│   │   ├── __init__.py
-│   │   └── settings.py         # Environment-based configuration
-│   │
-│   ├── llm/
-│   │   ├── __init__.py
-│   │   ├── provider_interface.py  # Abstract LLM provider
-│   │   ├── registry.py         # Provider registration
-│   │   ├── openai_provider.py
-│   │   ├── anthropic_provider.py
-│   │   ├── ollama_provider.py
-│   │   ├── google_provider.py
-│   │   ├── azure_provider.py
-│   │   ├── deepseek_provider.py
-│   │   ├── mistral_provider.py
-│   │   └── grok_provider.py
-│   │
-│   ├── voice/
-│   │   ├── __init__.py
-│   │   ├── stt.py              # Speech-to-Text (faster-whisper)
-│   │   ├── tts.py              # Text-to-Speech (Piper)
-│   │   └── voice_loop.py       # Continuous conversation loop
-│   │
-│   └── analysis/
-│       ├── __init__.py
-│       ├── pitch_analysis.py   # Pitch analysis & coaching prompts
-│       └── filler_detection.py # Filler word detection
-│
-├── frontend/
-│   ├── index.html              # Main UI
-│   ├── style.css               # Open WebUI inspired styles
-│   └── script.js               # WebSocket & audio handling
-│
-├── models/
-│   ├── whisper/                # Whisper models (auto-downloaded)
-│   └── piper/                  # Piper voice models
-│
-├── docker/
-│   ├── Dockerfile
-│   └── docker-compose.yml
-│
-├── .env.example                # Environment configuration template
-└── requirements.txt
-```
+- `requirements.txt` for Python dependencies
+- faster-whisper for transcription
+- Piper for voice output
+- Supabase for sessions, messages, and speech metrics
+- `backend/config/settings.py` loads `.env.local` first, then `.env`
 
 ## Quick Start
 
-### 1. Install Prerequisites
-
-#### Install Ollama (for local LLM)
-
-**Windows:**
-Download from https://ollama.com/download
-
-**macOS/Linux:**
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-#### Pull the LLM Model
+### 1. Create a Virtual Environment
 
 ```bash
-ollama pull qwen3:0.6b
+python -m venv .venv
 ```
 
-#### Start Ollama Server
+Activate it:
 
 ```bash
-ollama serve
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
 ```
 
-### 2. Install Piper TTS
+### 2. Install Python Requirements
+
+```bash
+pip install -r requirements.txt
+```
+
+This installs the backend runtime plus the Supabase Python client.
+
+### 3. Install Whisper Support
+
+The app uses faster-whisper. The model downloads automatically on first run into `models/whisper`, but you can choose the size in your environment file.
+
+Recommended settings for a CPU machine:
+
+```env
+WHISPER_MODEL_SIZE=tiny
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
+WHISPER_LANGUAGE=en
+WHISPER_MODELS_DIR=models/whisper
+```
+
+If you want to pre-download manually, just start the backend once after setting the model size. faster-whisper will fetch the model into the configured folder.
+
+### 4. Install Piper TTS
+
+You can install Piper manually:
 
 ```bash
 pip install piper-tts
 ```
 
-Note:
-The backend now supports automatic TTS bootstrap on startup. If `piper-tts` or the
-default voice model (`en_US-lessac-medium`) is missing, it will try to install/download
-them automatically.
-
-To disable auto-bootstrap:
+The backend can also auto-install Piper and download the default voice model on startup when `AUTO_INSTALL_TTS=true`.
 
 ```env
-AUTO_INSTALL_TTS=false
+AUTO_INSTALL_TTS=true
+PIPER_VOICE=en_US-lessac-medium
+PIPER_MODELS_DIR=models/piper
 ```
 
-#### Download Voice Model
+If you want to download the voice files yourself, place these in `models/piper`:
 
 ```bash
-mkdir -p models/piper
-cd models/piper
-wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx
-wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json
+en_US-lessac-medium.onnx
+en_US-lessac-medium.onnx.json
 ```
 
-### 3. Install Python Dependencies
+### 5. Install Ollama for a Local LLM
+
+Ollama is optional, but it is the easiest local provider to use.
+
+Windows:
+
+1. Download Ollama from https://ollama.com/download
+2. Open a terminal and run:
 
 ```bash
-# Create virtual environment
-python -m venv .venv
-
-# Activate (Windows)
-.venv\Scripts\activate
-
-# Activate (macOS/Linux)
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+ollama pull qwen3:0.6b
+ollama serve
 ```
 
-### 4. Configure Environment (Optional)
+macOS / Linux:
 
 ```bash
-# Copy example config
-cp .env.example .env
-
-# Edit .env to add cloud provider API keys (optional)
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3:0.6b
+ollama serve
 ```
 
-### 5. Run the Server
+### 6. Set Up Supabase
+
+Supabase is used for session persistence, message history, and speech metrics. You can use either a cloud Supabase project or a local Supabase instance.
+
+#### Cloud Supabase
+
+1. Create a project at https://supabase.com.
+2. From Project Settings > API, copy:
+   - Project URL
+   - `anon` public key
+   - `service_role` key
+3. Create the required tables.
+4. Add the Supabase values to your `.env.local` or `.env` file.
+
+#### Local Supabase
+
+1. Install the Supabase CLI.
+2. Start local services with `supabase start`.
+3. Use the local API URL and keys from the CLI output.
+4. Create the required tables in the local database.
+
+#### Required Supabase Tables
+
+The backend expects these tables:
+
+- `sessions`
+- `messages`
+- `speech_metrics`
+
+The full SQL schema is documented in [docs/supabase_setup.md](docs/supabase_setup.md).
+
+#### Supabase Environment Variables
+
+Add these to `.env.local` for local development or `.env` for shared defaults:
+
+```env
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+SUPABASE_ANON_KEY=YOUR_ANON_KEY
+SESSION_CONTEXT_WINDOW=8
+```
+
+Use `SUPABASE_SERVICE_ROLE_KEY` only on the backend. Do not expose it in frontend code.
+
+### 7. Add Authentication with Supabase
+
+Supabase Auth is the right place to add sign-in for the app. The backend already supports Supabase-backed persistence, but if you want user login, configure it in Supabase first.
+
+Recommended setup:
+
+1. In Supabase Dashboard, open Authentication.
+2. Enable Email/Password auth or your preferred OAuth provider.
+3. Set your site URL and redirect URLs for local development and production.
+4. Keep using the `anon` key in browser-facing code.
+5. Keep using the `service_role` key only in backend code.
+6. If you later add user-aware session filtering, scope rows by authenticated user ID.
+
+If you only want shared session storage and do not need login yet, Supabase still works with the backend using the keys above.
+
+### 8. Create Your Environment File
+
+Copy the example file and edit it:
+
+```bash
+copy .env.example .env.local
+```
+
+or on macOS / Linux:
+
+```bash
+cp .env.example .env.local
+```
+
+Minimum useful configuration:
+
+```env
+DEFAULT_LLM=ollama
+OLLAMA_ENDPOINT=http://localhost:11434
+
+WHISPER_MODEL_SIZE=tiny
+WHISPER_DEVICE=cpu
+
+PIPER_VOICE=en_US-lessac-medium
+
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+SUPABASE_ANON_KEY=YOUR_ANON_KEY
+```
+
+Add cloud LLM keys only if you want those providers enabled:
+
+```env
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+GOOGLE_API_KEY=
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_API_KEY=
+DEEPSEEK_API_KEY=
+MISTRAL_API_KEY=
+GROK_API_KEY=
+```
+
+### 9. Run the Backend
 
 ```bash
 cd backend
 python main.py
 ```
 
-### 6. Open the Web UI
+Open the web UI at http://localhost:8000
 
-Navigate to: http://localhost:8000
+## Environment Reference
 
-## Configuration
-
-### Environment Variables
-
-Copy `.env.example` to `.env` and configure:
+### Core Settings
 
 ```env
-# Default LLM Provider (ollama, openai, anthropic, etc.)
 DEFAULT_LLM=ollama
-
-# Cloud Provider API Keys (optional)
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=...
-
-# STT Configuration
-WHISPER_MODEL_SIZE=tiny
-WHISPER_DEVICE=cpu
-
-# TTS Configuration
-PIPER_VOICE=en_US-lessac-medium
+DEFAULT_MODEL=
+HOST=0.0.0.0
+PORT=8000
+DEBUG=false
+PRELOAD_STT_MODEL=true
+SESSION_CONTEXT_WINDOW=8
 ```
 
-### Whisper Model Sizes
+### Speech-to-Text Settings
 
-| Model | Size | RAM Usage | Speed | Accuracy |
-|-------|------|-----------|-------|----------|
-| tiny | 39M | ~1GB | Fastest | Good |
-| base | 74M | ~1GB | Fast | Better |
-| small | 244M | ~2GB | Medium | Best |
+```env
+WHISPER_MODEL_SIZE=tiny
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
+WHISPER_LANGUAGE=en
+WHISPER_MODELS_DIR=models/whisper
+```
 
-## Usage
+### Text-to-Speech Settings
 
-### Basic Usage
-1. Select your **AI Provider** and **Model** from the dropdowns
-2. Choose a **Coaching Mode**
-3. Click **Start Recording** and speak your pitch
-4. Click **Stop Recording** when finished
-5. Review the AI feedback and scores
+```env
+PIPER_VOICE=en_US-lessac-medium
+PIPER_MODELS_DIR=models/piper
+AUTO_INSTALL_TTS=true
+```
 
-### Coaching Modes
+### Supabase Settings
 
-#### Pitch Analysis Mode
-- Get structured feedback with scores (0-10)
-- Categories: Clarity, Language, Confidence, Topic Relevance
-- Actionable improvement suggestions
+```env
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+SUPABASE_ANON_KEY=YOUR_ANON_KEY
+```
 
-#### Interactive Coaching Mode
-- Have a conversation to refine your pitch
-- Get iterative feedback on improvements
-- Build on previous responses
+## Coaching Modes
 
-#### Investor Q&A Mode
-- Practice answering investor questions
-- Questions cover problem, market, competition, team
-- Get evaluation of your answers
+1. Pitch Analysis Mode - structured feedback with scores and suggestions
+2. Interactive Coaching Mode - refine your pitch through conversation
+3. Investor Q&A Mode - practice answering investor questions
 
-## Docker Deployment
+## Docker
+
+If you prefer Docker, the repository includes files in `docker/`.
 
 ```bash
 cd docker
 docker-compose up --build
 ```
 
-This will:
-1. Build the pitch coach container
-2. Start Ollama container
-3. Auto-pull the qwen3:0.6b model
-4. Start the web server on port 8000
+## Troubleshooting
 
-To add cloud provider support, uncomment and set API keys in docker-compose.yml.
+### Ollama does not connect
+
+1. Make sure Ollama is running with `ollama serve`
+2. Check your model is installed with `ollama list`
+3. Pull the default model again with `ollama pull qwen3:0.6b`
+
+### Piper does not start
+
+1. Run `pip install piper-tts`
+2. Confirm `models/piper/en_US-lessac-medium.onnx` exists
+3. Leave `AUTO_INSTALL_TTS=true` if you want the backend to bootstrap it automatically
+
+### Whisper does not load
+
+1. Confirm faster-whisper is installed from `requirements.txt`
+2. Check the `WHISPER_MODEL_SIZE` and `WHISPER_MODELS_DIR` values
+3. Delete the cached model folder and restart if the download was interrupted
+
+### Supabase is disabled
+
+1. Confirm `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set
+2. Make sure the `sessions`, `messages`, and `speech_metrics` tables exist
+3. Verify the Supabase keys are copied from the correct project
+
+### Authentication is not working yet
+
+1. Enable Auth in the Supabase dashboard
+2. Set the correct redirect URLs
+3. Keep `SUPABASE_ANON_KEY` in browser-side code and `SUPABASE_SERVICE_ROLE_KEY` only on the backend
 
 ## API Reference
-
-### WebSocket Protocol (`/ws`)
-
-**Client Messages:**
-```json
-{"type": "config", "provider": "openai", "model": "gpt-4o", "mode": "pitch_analysis"}
-{"type": "start"}
-{"type": "audio", "data": "base64"}
-{"type": "stop"}
-{"type": "reset"}
-{"type": "ping"}
-```
-
-**Server Messages:**
-```json
-{"type": "config_ack", "config": {...}}
-{"type": "status", "message": "..."}
-{"type": "transcript", "text": "...", "final": true}
-{"type": "filler_words", "count": 5, "details": {...}}
-{"type": "analysis", "text": "...", "streaming": true}
-{"type": "scores", "data": {...}}
-{"type": "audio", "data": "base64", "format": "wav"}
-{"type": "complete"}
-{"type": "error", "message": "..."}
-```
 
 ### REST Endpoints
 
@@ -312,46 +315,24 @@ To add cloud provider support, uncomment and set API keys in docker-compose.yml.
 | `/api/providers` | GET | Available LLM providers |
 | `/api/models/{provider}` | GET | Models for a provider |
 | `/api/settings` | GET | Current settings |
+| `/api/sessions` | GET, POST | List or create Supabase sessions |
+| `/api/sessions/{session_id}` | GET | Fetch a session and its recent messages |
+| `/api/sessions/{session_id}/mode` | PATCH | Update the stored coaching mode |
+| `/api/sessions/{session_id}/summary` | POST | Generate a compact context summary |
 
-## Troubleshooting
+### WebSocket Messages
 
-### "Cannot connect to Ollama"
-1. Ensure Ollama is running: `ollama serve`
-2. Check if model is installed: `ollama list`
-3. Pull model if missing: `ollama pull qwen3:0.6b`
+Client messages include `config`, `start`, `audio`, `stop`, `reset`, and `ping`.
 
-### "Provider not available"
-1. Check API key is set in `.env`
-2. Verify endpoint URL is correct
-3. Check network connectivity
-
-### "Microphone not working"
-1. Allow microphone access in browser
-2. Check browser console for errors
-3. Try a different browser (Chrome recommended)
-
-### "No speech detected"
-1. Speak closer to the microphone
-2. Reduce background noise
-3. Try recording a longer segment (5+ seconds)
-
-## Scaling Suggestions
-
-1. **Horizontal Scaling**: Deploy multiple backend instances behind a load balancer
-2. **Caching**: Add Redis for caching provider responses
-3. **Queue System**: Use Celery/RabbitMQ for async processing
-4. **GPU Acceleration**: Enable CUDA for faster Whisper transcription
-5. **CDN**: Serve frontend assets via CDN for better performance
+Server messages include `config_ack`, `status`, `transcript`, `filler_words`, `analysis`, `scores`, `audio`, `complete`, and `error`.
 
 ## License
 
-MIT License - feel free to use and modify for your projects.
+MIT License
 
 ## Credits
 
-Built with:
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) - Speech recognition
-- [Ollama](https://ollama.com) - Local LLM runtime
-- [Piper](https://github.com/rhasspy/piper) - Text-to-speech
-- [FastAPI](https://fastapi.tiangolo.com) - Web framework
-- Architecture inspired by [Open WebUI](https://github.com/open-webui/open-webui)
+- faster-whisper - speech recognition
+- Ollama - local LLM runtime
+- Piper - text-to-speech
+- FastAPI - backend web framework

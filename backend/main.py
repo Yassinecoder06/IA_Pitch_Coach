@@ -23,7 +23,7 @@ import base64
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,6 +39,7 @@ from backend.config import settings
 from backend.voice.stt import load_model as load_stt_model, transcribe_audio
 from backend.voice.tts import (
     check_piper_available,
+    preload_tts_model,
     synthesize_speech,
     split_into_sentences
 )
@@ -54,6 +55,11 @@ from backend.analysis.pitch_analysis import (
     parse_scores_from_response
 )
 from backend.storage.session_manager import SessionManager
+from backend.auth.supabase_auth import (
+    extract_bearer_token,
+    get_user_id_from_token,
+    require_user_id,
+)
 
 # Import LLM modules
 from backend.llm import get_provider, list_providers, get_available_providers
@@ -156,6 +162,13 @@ async def startup_event():
     else:
         print(f"[Startup] Warning: {tts_msg}")
 
+    if os.getenv("PRELOAD_TTS_MODEL", "false").lower() == "true":
+        print("\n[Startup] Preloading TTS voice model...")
+        if preload_tts_model():
+            print("[Startup] TTS voice model loaded")
+        else:
+            print("[Startup] Warning: failed to preload TTS voice model")
+
     startup_complete = True
     print("\n" + "=" * 60)
     print(f"Startup complete! Open http://localhost:{settings.server.port} in your browser")
@@ -173,6 +186,26 @@ async def root():
     if os.path.exists(frontend_path):
         return FileResponse(frontend_path)
     return JSONResponse({"error": "Frontend not found"}, status_code=404)
+
+
+@app.get("/login")
+@app.get("/login.html")
+async def login_page():
+    """Serve the dedicated sign-in page."""
+    frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "login.html")
+    if os.path.exists(frontend_path):
+        return FileResponse(frontend_path)
+    return JSONResponse({"error": "Login page not found"}, status_code=404)
+
+
+@app.get("/signup")
+@app.get("/signup.html")
+async def signup_page():
+    """Serve the dedicated sign-up page."""
+    frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "signup.html")
+    if os.path.exists(frontend_path):
+        return FileResponse(frontend_path)
+    return JSONResponse({"error": "Signup page not found"}, status_code=404)
 
 
 @app.get("/health")
@@ -262,57 +295,57 @@ async def get_settings():
 
 
 @app.get("/api/sessions")
-async def list_sessions(limit: int = 50):
+async def list_sessions(limit: int = 50, user_id: str = Depends(require_user_id)):
     if not session_manager.enabled:
         return {"enabled": False, "sessions": []}
-    return {"enabled": True, "sessions": session_manager.list_sessions(limit=limit)}
+    return {"enabled": True, "sessions": session_manager.list_sessions(user_id, limit=limit)}
 
 
 @app.post("/api/sessions")
-async def create_session(payload: CreateSessionRequest):
+async def create_session(payload: CreateSessionRequest, user_id: str = Depends(require_user_id)):
     if not session_manager.enabled:
         raise HTTPException(status_code=503, detail="Supabase is not configured")
 
-    created = session_manager.create_session(payload.title, _parse_mode(payload.mode).value)
+    created = session_manager.create_session(payload.title, _parse_mode(payload.mode).value, user_id)
     if not created:
         raise HTTPException(status_code=500, detail="Failed to create session")
     return created
 
 
 @app.get("/api/sessions/{session_id}")
-async def get_session(session_id: str, message_limit: int = 100):
+async def get_session(session_id: str, message_limit: int = 100, user_id: str = Depends(require_user_id)):
     if not session_manager.enabled:
         raise HTTPException(status_code=503, detail="Supabase is not configured")
 
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(session_id, user_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
     return {
         "session": session,
-        "messages": session_manager.get_recent_messages(session_id, limit=message_limit),
+        "messages": session_manager.get_recent_messages(session_id, user_id, limit=message_limit),
     }
 
 
 @app.patch("/api/sessions/{session_id}/mode")
-async def update_session_mode(session_id: str, payload: UpdateSessionModeRequest):
+async def update_session_mode(session_id: str, payload: UpdateSessionModeRequest, user_id: str = Depends(require_user_id)):
     if not session_manager.enabled:
         raise HTTPException(status_code=503, detail="Supabase is not configured")
 
-    session_manager.update_mode(session_id, _parse_mode(payload.mode).value)
+    session_manager.update_mode(session_id, user_id, _parse_mode(payload.mode).value)
     return {"ok": True}
 
 
 @app.post("/api/sessions/{session_id}/summary")
-async def summarize_session(session_id: str):
+async def summarize_session(session_id: str, user_id: str = Depends(require_user_id)):
     if not session_manager.enabled:
         raise HTTPException(status_code=503, detail="Supabase is not configured")
 
-    summary_md = session_manager.generate_session_summary_markdown(session_id)
+    summary_md = session_manager.generate_session_summary_markdown(session_id, user_id)
     if not summary_md:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    session_manager.update_context_markdown(session_id, summary_md)
+    session_manager.update_context_markdown(session_id, user_id, summary_md)
     return {"session_id": session_id, "context_md": summary_md}
 
 
@@ -355,6 +388,13 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("[WebSocket] Client connected")
 
+    auth_header = websocket.headers.get("authorization")
+    auth_token = websocket.query_params.get("token") or extract_bearer_token(auth_header)
+    current_user_id: Optional[str] = get_user_id_from_token(auth_token)
+
+    if auth_token and not current_user_id:
+        await websocket.send_json({"type": "error", "message": "Authentication failed. Sign in again."})
+
     # Session state
     audio_chunks: List[bytes] = []
     is_recording = False
@@ -385,8 +425,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     session_config["mode"] = _parse_mode(message["mode"])
                 if "session_id" in message:
                     current_session_id = message.get("session_id")
-                    if current_session_id and session_manager.enabled:
-                        session_manager.update_mode(current_session_id, session_config["mode"].value)
+                    if current_session_id and session_manager.enabled and current_user_id:
+                        session_manager.update_mode(current_session_id, current_user_id, session_config["mode"].value)
                 print(f"[WebSocket] Config updated: {session_config}")
                 await websocket.send_json({"type": "config_ack", "config": {
                     "provider": session_config["provider"],
@@ -395,12 +435,24 @@ async def websocket_endpoint(websocket: WebSocket):
                     "session_id": current_session_id,
                 }})
 
+            elif msg_type == "auth":
+                auth_token = message.get("token")
+                current_user_id = get_user_id_from_token(auth_token)
+                await websocket.send_json({
+                    "type": "auth_ack",
+                    "authenticated": bool(current_user_id),
+                    "user_id": current_user_id,
+                })
+
             elif msg_type == "create_session":
                 if not session_manager.enabled:
                     await websocket.send_json({"type": "error", "message": "Supabase is not configured"})
                     continue
+                if not current_user_id:
+                    await websocket.send_json({"type": "error", "message": "Sign in to create sessions"})
+                    continue
                 title = (message.get("title") or "Startup Pitch Practice").strip()
-                created = session_manager.create_session(title=title, mode=session_config["mode"].value)
+                created = session_manager.create_session(title=title, mode=session_config["mode"].value, user_id=current_user_id)
                 if not created:
                     await websocket.send_json({"type": "error", "message": "Failed to create session"})
                     continue
@@ -417,8 +469,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 if not session_manager.enabled:
                     await websocket.send_json({"type": "error", "message": "Supabase is not configured"})
                     continue
+                if not current_user_id:
+                    await websocket.send_json({"type": "error", "message": "Sign in to resume sessions"})
+                    continue
 
-                context = session_manager.build_context_window(requested_session_id, last_n=SESSION_CONTEXT_WINDOW)
+                context = session_manager.build_context_window(requested_session_id, current_user_id, last_n=SESSION_CONTEXT_WINDOW)
                 if not context:
                     await websocket.send_json({"type": "error", "message": "Session not found"})
                     continue
@@ -464,9 +519,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         conversation_history,
                         current_session_id,
                         session_context_md,
+                        current_user_id,
                     )
-                    if current_session_id and session_manager.enabled:
-                        refreshed = session_manager.build_context_window(current_session_id, last_n=SESSION_CONTEXT_WINDOW)
+                    if current_session_id and session_manager.enabled and current_user_id:
+                        refreshed = session_manager.build_context_window(current_session_id, current_user_id, last_n=SESSION_CONTEXT_WINDOW)
                         if refreshed:
                             session_context_md = refreshed.context_md
                 else:
@@ -494,9 +550,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     conversation_history,
                     current_session_id,
                     session_context_md,
+                    current_user_id,
                 )
-                if current_session_id and session_manager.enabled:
-                    refreshed = session_manager.build_context_window(current_session_id, last_n=SESSION_CONTEXT_WINDOW)
+                if current_session_id and session_manager.enabled and current_user_id:
+                    refreshed = session_manager.build_context_window(current_session_id, current_user_id, last_n=SESSION_CONTEXT_WINDOW)
                     if refreshed:
                         session_context_md = refreshed.context_md
 
@@ -530,6 +587,7 @@ async def process_audio_pipeline(
     conversation_history: List[Dict],
     session_id: Optional[str],
     session_context_md: str,
+    user_id: Optional[str],
 ) -> str:
     """
     Process audio through the full pipeline:
@@ -639,22 +697,24 @@ async def process_audio_pipeline(
     conversation_history.append({"role": "user", "content": transcript})
     conversation_history.append({"role": "assistant", "content": full_response})
 
-    if session_id and session_manager.enabled:
+    if session_id and session_manager.enabled and user_id:
         session_manager.append_message(
             session_id,
+            user_id,
             role="user",
             content=transcript,
             transcript=transcript,
         )
         session_manager.append_message(
             session_id,
+            user_id,
             role="assistant",
             content=full_response,
         )
-        session_manager.append_speech_metrics(session_id, speech_metrics)
-        context_md = session_manager.generate_session_summary_markdown(session_id)
+        session_manager.append_speech_metrics(session_id, user_id, speech_metrics)
+        context_md = session_manager.generate_session_summary_markdown(session_id, user_id)
         if context_md:
-            session_manager.update_context_markdown(session_id, context_md)
+            session_manager.update_context_markdown(session_id, user_id, context_md)
 
     # Parse and send scores (for pitch analysis mode)
     if config["mode"] == CoachingMode.PITCH_ANALYSIS:
@@ -681,6 +741,7 @@ async def process_text_pipeline(
     conversation_history: List[Dict],
     session_id: Optional[str],
     session_context_md: str,
+    user_id: Optional[str],
 ) -> str:
     """Process direct text input with the same LLM/session flow as voice."""
     await websocket.send_json({
@@ -723,12 +784,12 @@ async def process_text_pipeline(
     conversation_history.append({"role": "user", "content": text})
     conversation_history.append({"role": "assistant", "content": full_response})
 
-    if session_id and session_manager.enabled:
-        session_manager.append_message(session_id, role="user", content=text, transcript=None)
-        session_manager.append_message(session_id, role="assistant", content=full_response)
-        context_md = session_manager.generate_session_summary_markdown(session_id)
+    if session_id and session_manager.enabled and user_id:
+        session_manager.append_message(session_id, user_id, role="user", content=text, transcript=None)
+        session_manager.append_message(session_id, user_id, role="assistant", content=full_response)
+        context_md = session_manager.generate_session_summary_markdown(session_id, user_id)
         if context_md:
-            session_manager.update_context_markdown(session_id, context_md)
+            session_manager.update_context_markdown(session_id, user_id, context_md)
 
     if config["mode"] == CoachingMode.PITCH_ANALYSIS:
         scores = parse_scores_from_response(full_response)
@@ -817,6 +878,14 @@ async def get_js():
     if os.path.exists(js_path):
         return FileResponse(js_path, media_type="application/javascript")
     return JSONResponse({"error": "JS not found"}, status_code=404)
+
+
+@app.get("/auth.js")
+async def get_auth_js():
+    js_path = os.path.join(frontend_dir, "auth.js")
+    if os.path.exists(js_path):
+        return FileResponse(js_path, media_type="application/javascript")
+    return JSONResponse({"error": "Auth JS not found"}, status_code=404)
 
 
 # ============================================================================

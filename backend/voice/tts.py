@@ -310,6 +310,16 @@ def check_piper_available() -> Tuple[bool, str]:
     return get_engine().check_available()
 
 
+def preload_tts_model() -> bool:
+    """Preload the Piper voice model if available."""
+    engine = get_engine()
+    available, message = engine.check_available()
+    if not available:
+        print(f"[TTS] {message}")
+        return False
+    return engine.load_voice()
+
+
 def get_voice_model_path(voice_name: Optional[str] = None) -> Tuple[Optional[Path], Optional[Path]]:
     """Get paths to voice model files."""
     return get_engine()._get_voice_paths(voice_name)

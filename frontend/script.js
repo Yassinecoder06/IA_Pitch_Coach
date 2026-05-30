@@ -10,7 +10,7 @@
 
 const CONFIG = {
     // WebSocket settings
-    WS_URL: `ws://${window.location.host}/ws`,
+    WS_URL: `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`,
 
     // Audio settings
     CHUNK_INTERVAL_MS: 250,  // Send audio chunks every 250ms
@@ -25,6 +25,9 @@ const CONFIG = {
     VISUALIZER_COLOR: '#4f46e5',
     VISUALIZER_COLOR_ACTIVE: '#22c55e'
 };
+
+const AUTH_STORAGE_MODE_KEY = 'ia_pitch_coach_auth_storage_mode';
+const SUPABASE_STORAGE_KEY = 'ia_pitch_coach_supabase_auth';
 
 // ============================================================================
 // State Management
@@ -62,6 +65,16 @@ const state = {
     sessions: [],
     lastAssistantResponse: '',
     availableProviders: {},
+    activeAssistantMessageEl: null,
+    sessionFilter: '',
+
+    // Settings + Auth
+    settings: null,
+    supabaseClient: null,
+    authSession: null,
+    authUser: null,
+    authToken: null,
+    authReady: false,
 
     // Conversation history (for UI display)
     conversationHistory: [],
@@ -75,6 +88,10 @@ const state = {
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    bootstrapApp();
+});
+
+async function bootstrapApp() {
     // Cache DOM elements
     cacheElements();
 
@@ -84,9 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize canvas
     initCanvas();
 
+    // Load settings and auth before sessions
+    await loadSettings();
+    await initSupabase();
+
     // Load providers and check status
-    loadProviders();
-    loadSessions();
+    await loadProviders();
+    await loadSessions();
 
     // Check system status
     checkSystemStatus();
@@ -96,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize UI based on mode
     updateModeUI();
-});
+}
 
 function cacheElements() {
     state.elements = {
@@ -116,6 +137,13 @@ function cacheElements() {
         newSessionBtn: document.getElementById('newSessionBtn'),
         resumeSessionBtn: document.getElementById('resumeSessionBtn'),
         saveSummaryBtn: document.getElementById('saveSummaryBtn'),
+        sessionList: document.getElementById('sessionList'),
+        sessionSearchInput: document.getElementById('sessionSearchInput'),
+        activeSessionTitle: document.getElementById('activeSessionTitle'),
+        sidebarToggleBtn: document.getElementById('sidebarToggleBtn'),
+        sidebarCloseBtn: document.getElementById('sidebarCloseBtn'),
+        sidebarBackdrop: document.getElementById('sidebarBackdrop'),
+        appSidebar: document.getElementById('appSidebar'),
 
         // Recording
         recordButton: document.getElementById('recordButton'),
@@ -156,13 +184,23 @@ function cacheElements() {
         // History
         historySection: document.getElementById('historySection'),
         historyBox: document.getElementById('historyBox'),
+        chatMessages: document.getElementById('chatMessages'),
 
         // Audio
         audioPlayer: document.getElementById('audioPlayer'),
 
         // Loading
         loadingOverlay: document.getElementById('loadingOverlay'),
-        loadingText: document.getElementById('loadingText')
+        loadingText: document.getElementById('loadingText'),
+
+        // Auth
+        authSection: document.getElementById('authSection'),
+        signOutBtn: document.getElementById('signOutBtn'),
+        authPageLink: document.getElementById('authPageLink'),
+        authCreateLink: document.getElementById('authCreateLink'),
+        authUserLabel: document.getElementById('authUserLabel'),
+        authStatusText: document.getElementById('authStatusText'),
+        authHint: document.getElementById('authHint')
     };
 }
 
@@ -199,6 +237,21 @@ function setupEventListeners() {
     if (state.elements.saveSummaryBtn) {
         state.elements.saveSummaryBtn.addEventListener('click', saveSessionSummary);
     }
+    if (state.elements.sessionSearchInput) {
+        state.elements.sessionSearchInput.addEventListener('input', (event) => {
+            state.sessionFilter = event.target.value || '';
+            populateSessionSelect();
+        });
+    }
+    if (state.elements.sidebarToggleBtn) {
+        state.elements.sidebarToggleBtn.addEventListener('click', openSidebar);
+    }
+    if (state.elements.sidebarCloseBtn) {
+        state.elements.sidebarCloseBtn.addEventListener('click', closeSidebar);
+    }
+    if (state.elements.sidebarBackdrop) {
+        state.elements.sidebarBackdrop.addEventListener('click', closeSidebar);
+    }
     if (state.elements.textSendButton) {
         state.elements.textSendButton.addEventListener('click', sendTextMessage);
     }
@@ -212,6 +265,10 @@ function setupEventListeners() {
     if (state.elements.readAloudBtn) {
         state.elements.readAloudBtn.addEventListener('click', triggerReadAloud);
     }
+
+    if (state.elements.signOutBtn) {
+        state.elements.signOutBtn.addEventListener('click', handleSignOut);
+    }
 }
 
 function initCanvas() {
@@ -219,6 +276,16 @@ function initCanvas() {
     if (canvas) {
         resizeCanvas();
     }
+}
+
+function openSidebar() {
+    state.elements.appSidebar?.classList.add('is-open');
+    state.elements.sidebarBackdrop?.classList.add('is-visible');
+}
+
+function closeSidebar() {
+    state.elements.appSidebar?.classList.remove('is-open');
+    state.elements.sidebarBackdrop?.classList.remove('is-visible');
 }
 
 function resizeCanvas() {
@@ -347,7 +414,7 @@ function updateModeUI() {
     // Show/hide scores section (only for pitch_analysis mode)
     if (state.elements.scoresSection) {
         state.elements.scoresSection.style.display =
-            mode === 'pitch_analysis' ? 'block' : 'none';
+            mode === 'pitch_analysis' ? 'grid' : 'none';
     }
 
     // Show/hide history section (for interactive modes)
@@ -415,6 +482,290 @@ function updateHistoryUI() {
     historyBox.scrollTop = historyBox.scrollHeight;
 }
 
+function clearChatMessages() {
+    if (!state.elements.chatMessages) return;
+
+    state.activeAssistantMessageEl = null;
+    state.elements.chatMessages.innerHTML = `
+        <article class="message assistant-message intro-message">
+            <div class="message-avatar">AI</div>
+            <div class="message-content">
+                <h1>What pitch do you want to practice?</h1>
+                <p>Type a paragraph, use the microphone, or resume a saved session from the sidebar.</p>
+            </div>
+        </article>
+    `;
+}
+
+function removeIntroMessage() {
+    state.elements.chatMessages?.querySelector('.intro-message')?.remove();
+}
+
+function appendChatMessage(role, content, options = {}) {
+    if (!state.elements.chatMessages) return null;
+
+    removeIntroMessage();
+
+    const message = document.createElement('article');
+    message.className = `message ${role === 'user' ? 'user-message' : 'assistant-message'}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.textContent = role === 'user' ? 'You' : 'AI';
+
+    const body = document.createElement('div');
+    body.className = 'message-content';
+    if (options.html) {
+        body.innerHTML = options.html;
+    } else {
+        body.textContent = content || '';
+    }
+
+    message.appendChild(avatar);
+    message.appendChild(body);
+    if (role !== 'user' && options.speaker !== false && content) {
+        addSpeakerButtonToMessage(message, content);
+    }
+    state.elements.chatMessages.appendChild(message);
+    scrollChatToBottom();
+    return message;
+}
+
+function addSpeakerButtonToMessage(message, text) {
+    if (!message || message.querySelector('.message-tools')) return;
+
+    const spokenText = (text || message.querySelector('.message-content')?.textContent || '').trim();
+    if (!spokenText) return;
+
+    const tools = document.createElement('div');
+    tools.className = 'message-tools';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'speaker-button inline-speaker-button';
+    button.title = 'Read this answer aloud';
+    button.setAttribute('aria-label', 'Read this answer aloud');
+    button.textContent = '🔊';
+    button.addEventListener('click', () => triggerReadAloud(spokenText));
+
+    tools.appendChild(button);
+    message.appendChild(tools);
+}
+
+function updateAssistantStreamingMessage(text, complete = false) {
+    if (!state.activeAssistantMessageEl) {
+        state.activeAssistantMessageEl = appendChatMessage('assistant', '', {
+            html: '<span class="streaming-cursor"></span>'
+        });
+    }
+
+    const body = state.activeAssistantMessageEl?.querySelector('.message-content');
+    if (!body) return;
+
+    const cursor = body.querySelector('.streaming-cursor');
+    if (cursor) cursor.remove();
+
+    body.textContent += text || '';
+
+    if (complete) {
+        addSpeakerButtonToMessage(state.activeAssistantMessageEl, body.textContent || '');
+        state.activeAssistantMessageEl = null;
+    } else {
+        const newCursor = document.createElement('span');
+        newCursor.className = 'streaming-cursor';
+        body.appendChild(newCursor);
+    }
+
+    scrollChatToBottom();
+}
+
+function renderHistoryInChat(history) {
+    clearChatMessages();
+    for (const turn of history || []) {
+        appendChatMessage(turn.role === 'user' ? 'user' : 'assistant', turn.content || '');
+    }
+}
+
+function scrollChatToBottom() {
+    const chatScroll = state.elements.chatMessages?.closest('.chat-scroll');
+    if (chatScroll) {
+        chatScroll.scrollTop = chatScroll.scrollHeight;
+    }
+}
+
+// ============================================================================
+// Settings and Authentication
+// ============================================================================
+
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/settings');
+        state.settings = await response.json();
+    } catch (error) {
+        console.warn('Failed to load settings:', error);
+        state.settings = null;
+    }
+}
+
+async function initSupabase() {
+    const supabaseConfig = state.settings?.supabase || {};
+    if (!supabaseConfig.url || !supabaseConfig.anon_key) {
+        state.authReady = false;
+        updateAuthUI('Supabase auth is not configured.');
+        return;
+    }
+
+    if (!window.supabase || !window.supabase.createClient) {
+        state.authReady = false;
+        updateAuthUI('Supabase client library failed to load.');
+        return;
+    }
+
+    state.supabaseClient = window.supabase.createClient(
+        supabaseConfig.url,
+        supabaseConfig.anon_key,
+        {
+            auth: {
+                storage: getAuthStorage(),
+                storageKey: SUPABASE_STORAGE_KEY,
+                persistSession: true,
+                autoRefreshToken: true,
+                detectSessionInUrl: false
+            }
+        }
+    );
+    state.authReady = true;
+
+    try {
+        const { data, error } = await state.supabaseClient.auth.getSession();
+        if (data?.session) {
+            const { data: userData, error: userError } = await state.supabaseClient.auth.getUser();
+            applyAuthState({ ...data.session, user: userData?.user || data.session.user }, userError);
+        } else {
+            applyAuthState(null, error);
+        }
+    } catch (error) {
+        updateAuthUI('Failed to read auth session.');
+    }
+
+    state.supabaseClient.auth.onAuthStateChange((_event, session) => {
+        applyAuthState(session, null);
+    });
+}
+
+function getAuthStorageMode() {
+    return window.localStorage.getItem(AUTH_STORAGE_MODE_KEY)
+        || window.sessionStorage.getItem(AUTH_STORAGE_MODE_KEY)
+        || 'local';
+}
+
+function getAuthStorage() {
+    return getAuthStorageMode() === 'session' ? window.sessionStorage : window.localStorage;
+}
+
+function clearAuthStorage() {
+    window.localStorage.removeItem(AUTH_STORAGE_MODE_KEY);
+    window.sessionStorage.removeItem(AUTH_STORAGE_MODE_KEY);
+    window.localStorage.removeItem(SUPABASE_STORAGE_KEY);
+    window.sessionStorage.removeItem(SUPABASE_STORAGE_KEY);
+}
+
+function applyAuthState(session, error) {
+    state.authSession = session || null;
+    state.authUser = session?.user || null;
+    state.authToken = session?.access_token || null;
+    updateAuthUI(error ? (error.message || 'Authentication error') : '');
+
+    if (state.authToken) {
+        sendAuthToken();
+    }
+
+    loadSessions();
+}
+
+function updateAuthUI(message) {
+    const hasUser = Boolean(state.authUser);
+    const email = state.authUser?.email || 'Not signed in';
+
+    if (state.elements.authUserLabel) {
+        state.elements.authUserLabel.textContent = email;
+    }
+
+    if (state.elements.authStatusText) {
+        state.elements.authStatusText.textContent = hasUser
+            ? `Authenticated through Supabase. Sessions are scoped to this account.`
+            : 'Sign in to save sessions and chat history.';
+    }
+
+    if (state.elements.authHint) {
+        state.elements.authHint.textContent = message || '';
+    }
+
+    if (state.elements.signOutBtn) {
+        state.elements.signOutBtn.disabled = !hasUser;
+    }
+    if (state.elements.authPageLink) {
+        state.elements.authPageLink.textContent = hasUser ? 'Account Ready' : 'Sign In';
+        state.elements.authPageLink.href = hasUser ? '/' : '/login';
+        state.elements.authPageLink.classList.toggle('is-authenticated', hasUser);
+    }
+    if (state.elements.authCreateLink) {
+        state.elements.authCreateLink.style.display = hasUser ? 'none' : 'inline-flex';
+    }
+
+    setSessionControlsEnabled(hasUser);
+
+    if (!hasUser) {
+        state.sessions = [];
+        populateSessionSelect();
+    }
+}
+
+function setSessionControlsEnabled(enabled) {
+    const controls = [
+        state.elements.sessionSelect,
+        state.elements.newSessionBtn,
+        state.elements.resumeSessionBtn,
+        state.elements.saveSummaryBtn,
+    ];
+
+    for (const control of controls) {
+        if (control) {
+            control.disabled = !enabled;
+        }
+    }
+}
+
+async function handleSignOut() {
+    if (!state.supabaseClient) {
+        return;
+    }
+
+    await state.supabaseClient.auth.signOut();
+    clearAuthStorage();
+    state.authSession = null;
+    state.authUser = null;
+    state.authToken = null;
+    state.currentSessionId = null;
+    sendMessage({ type: 'auth', token: null });
+    updateAuthUI('Signed out.');
+}
+
+async function authFetch(url, options = {}) {
+    const headers = new Headers(options.headers || {});
+    if (state.authToken) {
+        headers.set('Authorization', `Bearer ${state.authToken}`);
+    }
+    return fetch(url, { ...options, headers });
+}
+
+function sendAuthToken() {
+    if (!state.authToken || !state.wsConnected) {
+        return;
+    }
+    sendMessage({ type: 'auth', token: state.authToken });
+}
+
 // ============================================================================
 // System Status
 // ============================================================================
@@ -463,7 +814,8 @@ function initWebSocket() {
         state.reconnectAttempts = 0;
         updateStatusIndicator('wsStatus', true);
 
-        // Send initial config
+        // Send auth first, then initial config
+        sendAuthToken();
         sendConfig();
     };
 
@@ -550,6 +902,12 @@ function handleWebSocketMessage(event) {
                 handleSessionResumed(message);
                 break;
 
+            case 'auth_ack':
+                if (!message.authenticated) {
+                    updateAuthUI('Authentication failed. Sign in again.');
+                }
+                break;
+
             case 'read_aloud_complete':
                 hideLoading();
                 break;
@@ -584,6 +942,7 @@ function handleTranscriptMessage(message) {
 
     if (message.final) {
         transcriptBox.innerHTML = `<p class="transcript-text">${escapeHtml(message.text)}</p>`;
+        appendChatMessage('user', message.text);
 
         // Add to conversation history for display
         if (state.currentMode !== 'pitch_analysis') {
@@ -622,6 +981,8 @@ function handleAnalysisMessage(message) {
     const feedbackBox = state.elements.feedbackBox;
 
     if (message.streaming) {
+        updateAssistantStreamingMessage(message.text, false);
+
         // Append streaming content
         const existing = feedbackBox.querySelector('.feedback-text');
         if (existing) {
@@ -632,6 +993,8 @@ function handleAnalysisMessage(message) {
             feedbackBox.innerHTML = `<div class="feedback-text">${escapeHtml(message.text)}<span class="streaming-cursor"></span></div>`;
         }
     } else if (message.complete) {
+        updateAssistantStreamingMessage('', true);
+
         // Remove streaming cursor
         const cursor = feedbackBox.querySelector('.streaming-cursor');
         if (cursor) {
@@ -659,8 +1022,13 @@ function handleAnalysisMessage(message) {
 
 function handleSessionCreated(message) {
     state.currentSessionId = message.session?.id || null;
+    if (state.elements.activeSessionTitle) {
+        state.elements.activeSessionTitle.textContent = message.session?.title || 'New pitch session';
+    }
+    clearChatMessages();
     sendConfig();
     loadSessions();
+    closeSidebar();
 }
 
 function handleSessionResumed(message) {
@@ -672,9 +1040,15 @@ function handleSessionResumed(message) {
     }
 
     state.conversationHistory = Array.isArray(message.history) ? message.history : [];
+    renderHistoryInChat(state.conversationHistory);
+    const selected = state.sessions.find((session) => session.id === state.currentSessionId);
+    if (state.elements.activeSessionTitle) {
+        state.elements.activeSessionTitle.textContent = selected?.title || 'Resumed session';
+    }
     updateModeUI();
     updateHistoryUI();
     sendConfig();
+    closeSidebar();
 }
 
 function handleScoresMessage(message) {
@@ -1144,6 +1518,8 @@ function updateRecordingUI(isRecording) {
 }
 
 function resetResultsUI() {
+    clearChatMessages();
+
     // Reset transcript
     state.elements.transcriptBox.innerHTML = '<p class="placeholder">Your speech will appear here...</p>';
 
@@ -1174,8 +1550,17 @@ function resetResultsUI() {
 }
 
 async function loadSessions() {
+    if (!state.authUser) {
+        state.sessions = [];
+        populateSessionSelect();
+        return;
+    }
     try {
-        const response = await fetch('/api/sessions');
+        const response = await authFetch('/api/sessions');
+        if (response.status === 401) {
+            updateAuthUI('Sign in to load sessions.');
+            return;
+        }
         const data = await response.json();
         state.sessions = data.sessions || [];
         populateSessionSelect();
@@ -1186,33 +1571,91 @@ async function loadSessions() {
 
 function populateSessionSelect() {
     const select = state.elements.sessionSelect;
-    if (!select) return;
+    const list = state.elements.sessionList;
 
-    select.innerHTML = '';
+    if (select) {
+        select.innerHTML = '';
+    }
+
     if (state.sessions.length === 0) {
-        select.innerHTML = '<option value="">No saved sessions</option>';
+        if (select) {
+            select.innerHTML = '<option value="">No saved sessions</option>';
+        }
+        if (list) {
+            list.innerHTML = `<p class="empty-sidebar">${state.authUser ? 'No saved sessions yet.' : 'Sign in to load saved sessions.'}</p>`;
+        }
         return;
     }
 
-    for (const session of state.sessions) {
-        const option = document.createElement('option');
-        option.value = session.id;
-        option.textContent = `${session.title || 'Untitled'} (${session.current_mode || 'pitch_analysis'})`;
-        select.appendChild(option);
+    const filter = state.sessionFilter.trim().toLowerCase();
+    const filteredSessions = state.sessions.filter((session) => {
+        const haystack = `${session.title || ''} ${session.current_mode || ''}`.toLowerCase();
+        return !filter || haystack.includes(filter);
+    });
+
+    if (list) {
+        list.innerHTML = '';
     }
 
-    if (state.currentSessionId) {
+    for (const session of filteredSessions) {
+        if (select) {
+            const option = document.createElement('option');
+            option.value = session.id;
+            option.textContent = `${session.title || 'Untitled'} (${session.current_mode || 'pitch_analysis'})`;
+            select.appendChild(option);
+        }
+
+        if (list) {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'session-item';
+            item.classList.toggle('active', session.id === state.currentSessionId);
+            item.dataset.sessionId = session.id;
+            item.innerHTML = `
+                <span class="session-title">${escapeHtml(session.title || 'Untitled')}</span>
+                <span class="session-meta">${escapeHtml(session.current_mode || 'pitch_analysis')}</span>
+            `;
+            item.addEventListener('click', () => {
+                if (state.elements.sessionSelect) {
+                    state.elements.sessionSelect.value = session.id;
+                }
+                resumeSelectedSession();
+            });
+            list.appendChild(item);
+        }
+    }
+
+    if (filteredSessions.length === 0 && list) {
+        list.innerHTML = '<p class="empty-sidebar">No matching sessions.</p>';
+    }
+
+    if (select && state.currentSessionId) {
         select.value = state.currentSessionId;
     }
 }
 
 function createSession() {
+    if (!state.authUser) {
+        state.currentSessionId = null;
+        state.conversationHistory = [];
+        resetResultsUI();
+        if (state.elements.activeSessionTitle) {
+            state.elements.activeSessionTitle.textContent = 'New pitch session';
+        }
+        updateAuthUI('Sign in when you want this session saved.');
+        closeSidebar();
+        return;
+    }
     const title = window.prompt('Session title', 'Startup Pitch Practice');
     if (title === null) return;
     sendMessage({ type: 'create_session', title: title.trim() || 'Startup Pitch Practice' });
 }
 
 function resumeSelectedSession() {
+    if (!state.authUser) {
+        updateAuthUI('Sign in to resume sessions.');
+        return;
+    }
     const sessionId = state.elements.sessionSelect?.value;
     if (!sessionId) return;
     sendMessage({ type: 'resume_session', session_id: sessionId });
@@ -1223,9 +1666,13 @@ async function saveSessionSummary() {
         alert('Create or resume a session first.');
         return;
     }
+    if (!state.authUser) {
+        updateAuthUI('Sign in to save session summaries.');
+        return;
+    }
 
     try {
-        const response = await fetch(`/api/sessions/${state.currentSessionId}/summary`, { method: 'POST' });
+        const response = await authFetch(`/api/sessions/${state.currentSessionId}/summary`, { method: 'POST' });
         if (!response.ok) {
             throw new Error('Failed to save session summary');
         }
@@ -1244,14 +1691,16 @@ function sendTextMessage() {
     state.elements.textInput.value = '';
 }
 
-function triggerReadAloud() {
-    const text = (state.lastAssistantResponse || '').trim();
+function triggerReadAloud(textOverride = '') {
+    const text = (textOverride || state.lastAssistantResponse || '').trim();
     if (!text) return;
     showLoading('Generating voice response...');
     sendMessage({ type: 'read_aloud', text });
 }
 
 function resetCurrentFeedback() {
+    state.activeAssistantMessageEl = null;
+
     // Just reset the current feedback box, not history
     state.elements.feedbackBox.innerHTML = '<p class="placeholder">AI feedback will appear here...</p>';
 

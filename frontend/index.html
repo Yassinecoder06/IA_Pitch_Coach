@@ -6,19 +6,90 @@
     <title>AI Pitch Coach</title>
     <link rel="stylesheet" href="/style.css">
 </head>
-<body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <h1>AI Pitch Coach</h1>
-            <p class="subtitle">Practice your pitch with real-time AI feedback</p>
+<body class="chat-app">
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <aside class="app-sidebar" id="appSidebar">
+        <div class="sidebar-header">
+            <a class="brand-mark" href="/">
+                <span class="brand-icon">AI</span>
+                <span>Pitch Coach</span>
+            </a>
+            <button class="icon-button sidebar-close" id="sidebarCloseBtn" title="Close sidebar" type="button">×</button>
+        </div>
+
+        <button class="new-chat-button" id="newSessionBtn" type="button">
+            <span>+</span>
+            New session
+        </button>
+
+        <div class="sidebar-search">
+            <input id="sessionSearchInput" type="search" placeholder="Search sessions">
+        </div>
+
+        <select id="sessionSelect" class="sr-only" title="Open a saved session">
+            <option value="">No saved sessions</option>
+        </select>
+
+        <nav class="session-list" id="sessionList" aria-label="Saved sessions">
+            <p class="empty-sidebar">Sign in to load saved sessions.</p>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="auth-card-mini" id="authSection">
+                <div>
+                    <span class="auth-label">Account</span>
+                    <strong id="authUserLabel">Not signed in</strong>
+                    <p id="authStatusText">Sign in to save sessions and chat history.</p>
+                </div>
+                <p class="auth-hint" id="authHint"></p>
+            </div>
+            <div class="sidebar-auth-actions">
+                <a class="btn-secondary" id="authPageLink" href="/login">Sign In</a>
+                <a class="btn-secondary" id="authCreateLink" href="/signup">Sign Up</a>
+                <button class="btn-secondary" id="signOutBtn" type="button" disabled>Sign Out</button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="chat-workspace">
+        <header class="chat-topbar">
+            <button class="icon-button sidebar-toggle" id="sidebarToggleBtn" title="Open sidebar" type="button">☰</button>
+
+            <div class="topbar-title">
+                <span id="activeSessionTitle">New pitch session</span>
+                <small>Practice, analyze, and iterate</small>
+            </div>
+
+            <div class="model-controls">
+                <label>
+                    <span>Provider</span>
+                    <select id="providerSelect">
+                        <option value="ollama">Ollama</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Model</span>
+                    <select id="modelSelect">
+                        <option value="">Loading...</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Mode</span>
+                    <select id="modeSelect">
+                        <option value="pitch_analysis">Pitch Analysis</option>
+                        <option value="interactive-coaching">Interactive Coaching</option>
+                        <option value="investor_qa">Investor Q&A</option>
+                        <option value="conversation">Conversation</option>
+                    </select>
+                </label>
+            </div>
         </header>
 
-        <!-- Status Bar -->
-        <div class="status-bar" id="statusBar">
+        <section class="status-strip" id="statusBar" aria-label="System status">
             <div class="status-item">
                 <span class="status-dot" id="sttStatus"></span>
-                <span>Speech-to-Text</span>
+                <span>Speech</span>
             </div>
             <div class="status-item">
                 <span class="status-dot" id="llmStatus"></span>
@@ -26,182 +97,105 @@
             </div>
             <div class="status-item">
                 <span class="status-dot" id="ttsStatus"></span>
-                <span>Text-to-Speech</span>
+                <span>Voice</span>
             </div>
             <div class="status-item">
                 <span class="status-dot" id="wsStatus"></span>
-                <span>Connection</span>
+                <span>Live</span>
+            </div>
+        </section>
+
+        <section class="chat-scroll" aria-label="Conversation">
+            <div class="chat-messages" id="chatMessages">
+                <article class="message assistant-message intro-message">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <h1>What pitch do you want to practice?</h1>
+                        <p>Type a paragraph, use the microphone, or resume a saved session from the sidebar.</p>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="insights-panel" id="scoresSection">
+            <div class="score-card">
+                <span class="score-label">Clarity</span>
+                <strong class="score-value" id="clarityScore">-</strong>
+                <span class="score-bar"><span class="score-fill" id="clarityFill"></span></span>
+            </div>
+            <div class="score-card">
+                <span class="score-label">Language</span>
+                <strong class="score-value" id="languageScore">-</strong>
+                <span class="score-bar"><span class="score-fill" id="languageFill"></span></span>
+            </div>
+            <div class="score-card">
+                <span class="score-label">Confidence</span>
+                <strong class="score-value" id="confidenceScore">-</strong>
+                <span class="score-bar"><span class="score-fill" id="confidenceFill"></span></span>
+            </div>
+            <div class="score-card">
+                <span class="score-label">Relevance</span>
+                <strong class="score-value" id="relevanceScore">-</strong>
+                <span class="score-bar"><span class="score-fill" id="relevanceFill"></span></span>
+            </div>
+            <div class="filler-words">
+                <span class="filler-label">Filler words</span>
+                <strong class="filler-count" id="fillerCount">0</strong>
+                <span class="filler-details" id="fillerDetails"></span>
+            </div>
+        </section>
+
+        <section class="composer-wrap">
+            <div class="visualizer-container" id="visualizerContainer">
+                <canvas id="audioVisualizer"></canvas>
+                <div class="audio-level-container">
+                    <div class="audio-level-bar" id="audioLevelBar"></div>
+                </div>
+                <div class="recording-info">
+                    <span class="recording-dot"></span>
+                    <span class="recording-timer" id="recordingTimer">00:00</span>
+                </div>
+            </div>
+
+            <div class="composer">
+                <textarea id="textInput" placeholder="Message AI Pitch Coach..."></textarea>
+                <div class="composer-actions">
+                    <button class="icon-button record-button" id="recordButton" type="button" title="Record voice">
+                        <span class="record-icon" id="recordIcon"></span>
+                        <span id="recordText">Record</span>
+                    </button>
+                    <button class="icon-button speaker-button" id="readAloudBtn" type="button" title="Read last answer aloud" disabled>🔊</button>
+                    <button class="send-button" id="textSendButton" type="button" title="Send message">Send</button>
+                </div>
+            </div>
+            <p class="recording-hint" id="recordingHint">Type, send, or tap Record and speak clearly.</p>
+
+            <div class="secondary-actions">
+                <button class="btn-secondary" id="resumeSessionBtn" type="button">Resume selected</button>
+                <button class="btn-secondary" id="saveSummaryBtn" type="button">Save summary</button>
+                <button class="btn-secondary" id="resetConversationBtn" type="button">Reset chat</button>
+            </div>
+        </section>
+
+        <div class="legacy-output" aria-hidden="true">
+            <div id="transcriptBox"><p class="placeholder">Your speech will appear here...</p></div>
+            <div id="feedbackBox"><p class="placeholder">AI analysis will appear here after you record...</p></div>
+            <div id="historySection" style="display: none;">
+                <div id="historyBox"><p class="placeholder">Previous turns will appear here...</p></div>
             </div>
         </div>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Configuration Section -->
-            <section class="config-section">
-                <div class="config-row">
-                    <div class="config-item">
-                        <label for="providerSelect">AI Provider</label>
-                        <select id="providerSelect">
-                            <option value="ollama">Ollama (Local)</option>
-                        </select>
-                    </div>
-                    <div class="config-item">
-                        <label for="modelSelect">Model</label>
-                        <select id="modelSelect">
-                            <option value="">Loading...</option>
-                        </select>
-                    </div>
-                    <div class="config-item">
-                        <label for="modeSelect">Coaching Mode</label>
-                        <select id="modeSelect">
-                            <option value="pitch_analysis">Pitch Analysis</option>
-                            <option value="interactive-coaching">Interactive Coaching</option>
-                            <option value="investor_qa">Investor Q&A</option>
-                            <option value="conversation">Conversation</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="config-actions">
-                    <select id="sessionSelect" title="Open a saved session">
-                        <option value="">No saved sessions</option>
-                    </select>
-                    <button class="btn-secondary" id="newSessionBtn" title="Create a new session">
-                        New Session
-                    </button>
-                    <button class="btn-secondary" id="resumeSessionBtn" title="Resume selected session">
-                        Resume Session
-                    </button>
-                    <button class="btn-secondary" id="saveSummaryBtn" title="Generate markdown summary now">
-                        Save Summary
-                    </button>
-                    <button class="btn-secondary" id="resetConversationBtn" title="Clear conversation history">
-                        Reset Conversation
-                    </button>
-                </div>
-            </section>
+        <div class="audio-container" id="audioContainer">
+            <audio id="audioPlayer" autoplay></audio>
+        </div>
+    </main>
 
-            <!-- Recording Section -->
-            <section class="recording-section">
-                <button class="record-button" id="recordButton">
-                    <span class="record-icon" id="recordIcon"></span>
-                    <span id="recordText">Start Recording</span>
-                </button>
-
-                <!-- Audio Visualizer - Shows when recording -->
-                <div class="visualizer-container" id="visualizerContainer">
-                    <canvas id="audioVisualizer"></canvas>
-                    <div class="audio-level-container">
-                        <div class="audio-level-bar" id="audioLevelBar"></div>
-                    </div>
-                    <div class="recording-info">
-                        <span class="recording-dot"></span>
-                        <span class="recording-timer" id="recordingTimer">00:00</span>
-                    </div>
-                </div>
-
-                <p class="recording-hint" id="recordingHint">
-                    Click the button and speak your pitch clearly
-                </p>
-            </section>
-
-            <!-- Live Transcript Section -->
-            <section class="transcript-section">
-                <h2>Live Transcript</h2>
-                <div class="transcript-box" id="transcriptBox">
-                    <p class="placeholder">Your speech will appear here...</p>
-                </div>
-            </section>
-
-            <!-- Scores Section (only visible in pitch_analysis mode) -->
-            <section class="scores-section" id="scoresSection">
-                <h2>Pitch Scores</h2>
-                <div class="scores-grid">
-                    <div class="score-card">
-                        <div class="score-value" id="clarityScore">-</div>
-                        <div class="score-label">Clarity</div>
-                        <div class="score-bar">
-                            <div class="score-fill" id="clarityFill"></div>
-                        </div>
-                    </div>
-                    <div class="score-card">
-                        <div class="score-value" id="languageScore">-</div>
-                        <div class="score-label">Language</div>
-                        <div class="score-bar">
-                            <div class="score-fill" id="languageFill"></div>
-                        </div>
-                    </div>
-                    <div class="score-card">
-                        <div class="score-value" id="confidenceScore">-</div>
-                        <div class="score-label">Confidence</div>
-                        <div class="score-bar">
-                            <div class="score-fill" id="confidenceFill"></div>
-                        </div>
-                    </div>
-                    <div class="score-card">
-                        <div class="score-value" id="relevanceScore">-</div>
-                        <div class="score-label">Topic Relevance</div>
-                        <div class="score-bar">
-                            <div class="score-fill" id="relevanceFill"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Filler Words Counter -->
-                <div class="filler-words">
-                    <span class="filler-label">Filler Words:</span>
-                    <span class="filler-count" id="fillerCount">0</span>
-                    <span class="filler-details" id="fillerDetails"></span>
-                </div>
-            </section>
-
-            <!-- AI Feedback Section -->
-            <section class="feedback-section">
-                <h2>AI Feedback</h2>
-                <div class="feedback-box" id="feedbackBox">
-                    <p class="placeholder">AI analysis will appear here after you record...</p>
-                </div>
-                <div class="feedback-actions">
-                    <button class="btn-secondary" id="readAloudBtn" disabled>
-                        Read Aloud
-                    </button>
-                </div>
-            </section>
-
-            <section class="text-input-section">
-                <h2>Text Input</h2>
-                <div class="text-input-row">
-                    <textarea id="textInput" placeholder="Type a message or pitch paragraph..."></textarea>
-                    <button class="record-button text-send-button" id="textSendButton">Send Text</button>
-                </div>
-            </section>
-
-            <!-- Conversation History (for interactive modes) -->
-            <section class="history-section" id="historySection" style="display: none;">
-                <h2>Conversation History</h2>
-                <div class="history-box" id="historyBox">
-                    <p class="placeholder">Previous turns will appear here...</p>
-                </div>
-            </section>
-
-            <!-- Audio Playback Section (Hidden) -->
-            <div class="audio-container" id="audioContainer">
-                <audio id="audioPlayer" autoplay></audio>
-            </div>
-        </main>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p>Powered by faster-whisper, multiple LLM providers, and Piper TTS</p>
-            <p>Supports local and cloud AI models</p>
-        </footer>
-    </div>
-
-    <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-spinner"></div>
         <p id="loadingText">Processing...</p>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="/script.js"></script>
 </body>
 </html>

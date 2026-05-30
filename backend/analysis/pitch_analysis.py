@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Any, AsyncGenerator
 
 from backend.llm import get_provider, Message
+from backend.analysis.skill_loader import compose_skills
 
 
 class CoachingMode(str, Enum):
@@ -47,80 +48,11 @@ class PitchScores:
         )
 
 
-# System prompts for different modes
-PITCH_COACH_SYSTEM_PROMPT = """You are an expert pitch coach and communication specialist.
-Your role is to analyze speeches and pitches, providing structured feedback.
-
-When analyzing a pitch, you MUST return your response in the following exact format:
-
-SCORES:
-Clarity: X/10
-Language: X/10
-Confidence: X/10
-Topic Relevance: X/10
-
-ANALYSIS:
-[Brief 2-3 sentence overall assessment]
-
-ADVICE:
-- [First specific improvement suggestion]
-- [Second specific improvement suggestion]
-- [Third specific improvement suggestion]
-
-Keep your feedback concise, actionable, and encouraging.
-Focus on the most impactful improvements the speaker can make.
-Do not use markdown formatting.
-Do not use the '*' character anywhere in your response."""
-
-
-INTERACTIVE_COACH_PROMPT = """You are an interactive pitch coach helping someone refine their startup pitch.
-Your role is to have a conversation that helps them improve.
-
-Guidelines:
-- Start by acknowledging what they said
-- Give one specific piece of feedback with a concrete example of what to improve
-- Ask one follow-up question to help them think deeper
-- Be encouraging but direct
-- Keep responses concise (around 90-140 words)
-- If they've improved from a previous attempt, acknowledge the improvement
-- Always end with a complete sentence. Do not end with trailing quotes or sentence fragments.
-- Do not use markdown formatting.
-- Do not use the '*' character anywhere in your response.
-
-Remember to maintain context from previous turns in the conversation."""
-
-
-INVESTOR_QA_PROMPT = """You are a seasoned startup investor conducting a Q&A session.
-Your role is to ask challenging but fair questions about the startup pitch.
-
-Guidelines:
-- Ask ONE focused question at a time
-- Questions should probe:
-  - Problem/solution fit
-  - Market size and competition
-  - Business model and unit economics
-  - Team and execution capability
-  - Traction and milestones
-- After they answer, briefly evaluate (1-2 sentences) then ask the next question
-- Be professional but direct
-- Don't be unnecessarily harsh, but don't accept vague answers
-- Do not use markdown formatting.
-- Do not use the '*' character anywhere in your response.
-
-Start with a greeting and your first question about the problem they're solving."""
-
-
-CONVERSATION_MODE_PROMPT = """You are a supportive speaking practice partner.
-Your role is to keep a natural conversation while coaching communication quality.
-
-Guidelines:
-- Respond naturally and clearly, like a conversation partner
-- Provide concise communication coaching inline when useful
-- Highlight one practical improvement when the user asks for feedback
-- Keep responses complete and polished
-- Do not use markdown formatting
-- Do not use the '*' character anywhere in your response
-"""
+# Backward-compatible export; actual mode prompts are loaded from backend/skills/*.md.
+PITCH_COACH_SYSTEM_PROMPT = compose_skills(
+    "pitch_analysis",
+    ["delivery_coaching", "pitch_rewrite", "objection_handling", "web_research"],
+)
 
 
 class PitchAnalyzer:
@@ -179,14 +111,20 @@ class PitchAnalyzer:
 
     def _get_system_prompt(self, mode: CoachingMode) -> str:
         """Get system prompt for coaching mode."""
-        prompts = {
-            CoachingMode.PITCH_ANALYSIS: PITCH_COACH_SYSTEM_PROMPT,
-            CoachingMode.INTERACTIVE: INTERACTIVE_COACH_PROMPT,
-            CoachingMode.INTERACTIVE_COACHING: INTERACTIVE_COACH_PROMPT,
-            CoachingMode.CONVERSATION: CONVERSATION_MODE_PROMPT,
-            CoachingMode.INVESTOR_QA: INVESTOR_QA_PROMPT
+        mode_skills = {
+            CoachingMode.PITCH_ANALYSIS: "pitch_analysis",
+            CoachingMode.INTERACTIVE: "interactive_coaching",
+            CoachingMode.INTERACTIVE_COACHING: "interactive_coaching",
+            CoachingMode.CONVERSATION: "conversation",
+            CoachingMode.INVESTOR_QA: "investor_qa",
         }
-        return prompts.get(mode, PITCH_COACH_SYSTEM_PROMPT)
+        helper_skills = [
+            "delivery_coaching",
+            "pitch_rewrite",
+            "objection_handling",
+            "web_research",
+        ]
+        return compose_skills(mode_skills.get(mode, "pitch_analysis"), helper_skills)
 
     async def analyze(
         self,

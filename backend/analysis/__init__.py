@@ -9,9 +9,7 @@ from .pitch_analysis import (
     PitchAnalyzer,
     CoachingMode,
     PitchScores,
-    PITCH_COACH_SYSTEM_PROMPT,
-    INVESTOR_QA_PROMPT,
-    INTERACTIVE_COACH_PROMPT
+    PITCH_COACH_SYSTEM_PROMPT
 )
 
 __all__ = [
@@ -22,7 +20,5 @@ __all__ = [
     "PitchAnalyzer",
     "CoachingMode",
     "PitchScores",
-    "PITCH_COACH_SYSTEM_PROMPT",
-    "INVESTOR_QA_PROMPT",
-    "INTERACTIVE_COACH_PROMPT"
+    "PITCH_COACH_SYSTEM_PROMPT"
 ]

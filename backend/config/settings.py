@@ -20,8 +20,10 @@ env_path = root_dir / ".env"
 
 if env_local_path.exists():
     load_dotenv(env_local_path, override=True)
-if env_path.exists():
-    load_dotenv(env_path, override=False)
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+elif env_path.exists():
+    load_dotenv(env_path, override=True)
 
 
 @dataclass
@@ -296,6 +298,10 @@ class Settings:
             "server": {
                 "host": self.server.host,
                 "port": self.server.port
+            },
+            "supabase": {
+                "url": os.getenv("SUPABASE_URL", ""),
+                "anon_key": os.getenv("SUPABASE_ANON_KEY", "")
             }
         }
 

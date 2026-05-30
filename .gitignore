@@ -58,3 +58,5 @@ pip-log.txt
 
 # Docker
 docker/data/
+
+.ps

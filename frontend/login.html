@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In | AI Pitch Coach</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-page">
+    <main class="auth-shell">
+        <section class="auth-card" data-auth-mode="login">
+            <a class="brand-mark" href="/">
+                <span class="brand-icon">AI</span>
+                <span>Pitch Coach</span>
+            </a>
+
+            <div class="auth-title-block">
+                <p class="eyebrow">Welcome back</p>
+                <h1>Sign in to your coaching studio.</h1>
+                <p>Keep your saved sessions, transcripts, and pitch feedback synced to your Supabase account.</p>
+            </div>
+
+            <form class="auth-page-form" id="authForm">
+                <label for="authEmail">Email</label>
+                <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
+
+                <label for="authPassword">Password</label>
+                <input id="authPassword" type="password" placeholder="Your password" autocomplete="current-password" required>
+
+                <label class="remember-row" for="rememberMe">
+                    <input id="rememberMe" type="checkbox" checked>
+                    <span>
+                        Remember me
+                        <small>Keep this browser signed in with Supabase session storage.</small>
+                    </span>
+                </label>
+
+                <button class="btn-primary auth-submit" type="submit" id="authSubmitBtn">Sign In</button>
+                <p class="auth-hint" id="authMessage"></p>
+            </form>
+
+            <p class="auth-switch">New here? <a href="/signup">Create an account</a></p>
+        </section>
+
+        <aside class="auth-preview" aria-hidden="true">
+            <div class="preview-phone">
+                <div class="preview-topline"></div>
+                <div class="preview-score">92</div>
+                <div class="preview-caption">clarity score</div>
+                <div class="preview-bars">
+                    <span></span><span></span><span></span><span></span>
+                </div>
+                <div class="preview-list">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/auth.js"></script>
+</body>
+</html>

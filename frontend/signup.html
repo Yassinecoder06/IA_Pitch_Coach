@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account | AI Pitch Coach</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-page">
+    <main class="auth-shell">
+        <section class="auth-card" data-auth-mode="signup">
+            <a class="brand-mark" href="/">
+                <span class="brand-icon">AI</span>
+                <span>Pitch Coach</span>
+            </a>
+
+            <div class="auth-title-block">
+                <p class="eyebrow">Start practicing</p>
+                <h1>Create your coaching account.</h1>
+                <p>Use Supabase auth to save every pitch session, transcript, score, and summary under your account.</p>
+            </div>
+
+            <form class="auth-page-form" id="authForm">
+                <label for="authEmail">Email</label>
+                <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
+
+                <label for="authPassword">Password</label>
+                <input id="authPassword" type="password" placeholder="At least 6 characters" autocomplete="new-password" minlength="6" required>
+
+                <label class="remember-row" for="rememberMe">
+                    <input id="rememberMe" type="checkbox" checked>
+                    <span>
+                        Remember me after signup
+                        <small>Use persistent Supabase session storage on this browser.</small>
+                    </span>
+                </label>
+
+                <button class="btn-primary auth-submit" type="submit" id="authSubmitBtn">Create Account</button>
+                <p class="auth-hint" id="authMessage"></p>
+            </form>
+
+            <p class="auth-switch">Already have an account? <a href="/login">Sign in</a></p>
+        </section>
+
+        <aside class="auth-preview" aria-hidden="true">
+            <div class="preview-phone">
+                <div class="preview-topline"></div>
+                <div class="preview-score">AI</div>
+                <div class="preview-caption">coach ready</div>
+                <div class="preview-bars">
+                    <span></span><span></span><span></span><span></span>
+                </div>
+                <div class="preview-list">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/auth.js"></script>
+</body>
+</html>
