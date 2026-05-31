@@ -143,6 +143,66 @@ class SessionManager:
 
         self.client.table("sessions").update({"context_md": context_md, "updated_at": datetime.utcnow().isoformat()}).eq("id", session_id).eq("user_id", user_id).execute()
 
+    def delete_session(self, session_id: str, user_id: str) -> bool:
+        if not self.enabled:
+            return False
+
+        result = (
+            self.client
+            .table("sessions")
+            .delete()
+            .eq("id", session_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        rows = result.data or []
+        return len(rows) > 0
+
+    def delete_last_turn(self, session_id: str, user_id: str) -> int:
+        if not self.enabled:
+            return 0
+
+        result = (
+            self.client
+            .table("messages")
+            .select("id,role")
+            .eq("session_id", session_id)
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(2)
+            .execute()
+        )
+        rows = result.data or []
+        ids_to_delete: List[str] = []
+
+        if rows:
+            if rows[0].get("role") == "assistant":
+                ids_to_delete.append(rows[0]["id"])
+                if len(rows) > 1 and rows[1].get("role") == "user":
+                    ids_to_delete.append(rows[1]["id"])
+            elif rows[0].get("role") == "user":
+                ids_to_delete.append(rows[0]["id"])
+
+        if ids_to_delete:
+            self.client.table("messages").delete().in_("id", ids_to_delete).execute()
+            self._touch_session(session_id, user_id)
+
+        metrics = (
+            self.client
+            .table("speech_metrics")
+            .select("id")
+            .eq("session_id", session_id)
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        ) if self.enabled else None
+        metric_rows = metrics.data or [] if metrics else []
+        if metric_rows:
+            self.client.table("speech_metrics").delete().in_("id", [metric_rows[0]["id"]]).execute()
+
+        return len(ids_to_delete)
+
     def build_context_window(self, session_id: str, user_id: str, last_n: int = 8) -> Optional[SessionContextWindow]:
         session = self.get_session(session_id, user_id)
         if not session:

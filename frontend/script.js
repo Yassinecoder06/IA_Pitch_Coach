@@ -28,6 +28,7 @@ const CONFIG = {
 
 const AUTH_STORAGE_MODE_KEY = 'ia_pitch_coach_auth_storage_mode';
 const SUPABASE_STORAGE_KEY = 'ia_pitch_coach_supabase_auth';
+const SIDEBAR_COLLAPSED_KEY = 'ia_pitch_coach_sidebar_collapsed';
 
 // ============================================================================
 // State Management
@@ -79,6 +80,10 @@ const state = {
     // Conversation history (for UI display)
     conversationHistory: [],
 
+    // Modal + edit state
+    modalState: null,
+    pendingEditMessageEl: null,
+
     // UI elements (cached)
     elements: {}
 };
@@ -94,6 +99,8 @@ document.addEventListener('DOMContentLoaded', () => {
 async function bootstrapApp() {
     // Cache DOM elements
     cacheElements();
+
+    restoreSidebarState();
 
     // Set up event listeners
     setupEventListeners();
@@ -193,6 +200,17 @@ function cacheElements() {
         loadingOverlay: document.getElementById('loadingOverlay'),
         loadingText: document.getElementById('loadingText'),
 
+        // Modal
+        modalOverlay: document.getElementById('modalOverlay'),
+        modalTitle: document.getElementById('modalTitle'),
+        modalDescription: document.getElementById('modalDescription'),
+        modalBody: document.getElementById('modalBody'),
+        modalInputLabel: document.getElementById('modalInputLabel'),
+        modalInput: document.getElementById('modalInput'),
+        modalConfirmBtn: document.getElementById('modalConfirmBtn'),
+        modalCancelBtn: document.getElementById('modalCancelBtn'),
+        modalCloseBtn: document.getElementById('modalCloseBtn'),
+
         // Auth
         authSection: document.getElementById('authSection'),
         signOutBtn: document.getElementById('signOutBtn'),
@@ -214,6 +232,7 @@ function setupEventListeners() {
 
     // Handle window resize for canvas
     window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', handleSidebarLayoutChange);
 
     // Configuration changes
     if (state.elements.providerSelect) {
@@ -244,7 +263,7 @@ function setupEventListeners() {
         });
     }
     if (state.elements.sidebarToggleBtn) {
-        state.elements.sidebarToggleBtn.addEventListener('click', openSidebar);
+        state.elements.sidebarToggleBtn.addEventListener('click', toggleSidebar);
     }
     if (state.elements.sidebarCloseBtn) {
         state.elements.sidebarCloseBtn.addEventListener('click', closeSidebar);
@@ -269,6 +288,124 @@ function setupEventListeners() {
     if (state.elements.signOutBtn) {
         state.elements.signOutBtn.addEventListener('click', handleSignOut);
     }
+
+    if (state.elements.modalConfirmBtn) {
+        state.elements.modalConfirmBtn.addEventListener('click', confirmModal);
+    }
+    if (state.elements.modalCancelBtn) {
+        state.elements.modalCancelBtn.addEventListener('click', cancelModal);
+    }
+    if (state.elements.modalCloseBtn) {
+        state.elements.modalCloseBtn.addEventListener('click', cancelModal);
+    }
+    if (state.elements.modalOverlay) {
+        state.elements.modalOverlay.addEventListener('click', (event) => {
+            if (event.target === state.elements.modalOverlay) {
+                cancelModal();
+            }
+        });
+    }
+}
+
+function openModal(options = {}) {
+    const overlay = state.elements.modalOverlay;
+    if (!overlay) {
+        return Promise.resolve({ confirmed: false, value: '' });
+    }
+
+    const config = {
+        title: 'Confirm',
+        description: '',
+        confirmLabel: 'Confirm',
+        cancelLabel: 'Cancel',
+        input: false,
+        inputValue: '',
+        inputPlaceholder: '',
+        inputLabel: '',
+        confirmTone: 'primary',
+        showCancel: true,
+        ...options
+    };
+
+    if (state.elements.modalTitle) {
+        state.elements.modalTitle.textContent = config.title;
+    }
+    if (state.elements.modalDescription) {
+        state.elements.modalDescription.textContent = config.description || '';
+        state.elements.modalDescription.style.display = config.description ? 'block' : 'none';
+    }
+
+    if (state.elements.modalBody) {
+        state.elements.modalBody.style.display = config.input ? 'grid' : 'none';
+    }
+    if (state.elements.modalInputLabel) {
+        state.elements.modalInputLabel.textContent = config.inputLabel || 'Value';
+    }
+    if (state.elements.modalInput) {
+        state.elements.modalInput.value = config.inputValue || '';
+        state.elements.modalInput.placeholder = config.inputPlaceholder || '';
+    }
+
+    if (state.elements.modalConfirmBtn) {
+        state.elements.modalConfirmBtn.textContent = config.confirmLabel;
+        state.elements.modalConfirmBtn.classList.toggle('is-danger', config.confirmTone === 'danger');
+    }
+    if (state.elements.modalCancelBtn) {
+        state.elements.modalCancelBtn.textContent = config.cancelLabel || 'Cancel';
+        state.elements.modalCancelBtn.style.display = config.showCancel ? 'inline-flex' : 'none';
+    }
+
+    overlay.classList.add('visible');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.addEventListener('keydown', handleModalKeydown);
+
+    if (config.input && state.elements.modalInput) {
+        state.elements.modalInput.focus();
+        state.elements.modalInput.select();
+    } else if (state.elements.modalConfirmBtn) {
+        state.elements.modalConfirmBtn.focus();
+    }
+
+    return new Promise((resolve) => {
+        state.modalState = { resolve, input: config.input };
+    });
+}
+
+function closeModal(result) {
+    const overlay = state.elements.modalOverlay;
+    if (overlay) {
+        overlay.classList.remove('visible');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+    document.removeEventListener('keydown', handleModalKeydown);
+
+    const resolver = state.modalState?.resolve;
+    state.modalState = null;
+    if (resolver) {
+        resolver(result || { confirmed: false, value: '' });
+    }
+}
+
+function confirmModal() {
+    if (!state.modalState) return;
+    const value = state.modalState.input && state.elements.modalInput
+        ? state.elements.modalInput.value
+        : '';
+    closeModal({ confirmed: true, value });
+}
+
+function cancelModal() {
+    if (!state.modalState) return;
+    closeModal({ confirmed: false, value: '' });
+}
+
+function handleModalKeydown(event) {
+    if (event.key === 'Escape') {
+        cancelModal();
+    }
+    if (event.key === 'Enter' && state.modalState?.input) {
+        confirmModal();
+    }
 }
 
 function initCanvas() {
@@ -278,14 +415,84 @@ function initCanvas() {
     }
 }
 
+function isMobileLayout() {
+    return window.matchMedia('(max-width: 960px)').matches;
+}
+
+function restoreSidebarState() {
+    const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    if (stored === '1') {
+        setSidebarCollapsed(true);
+    } else {
+        updateSidebarToggleState();
+    }
+}
+
+function setSidebarCollapsed(collapsed) {
+    const sidebar = state.elements.appSidebar;
+    if (!sidebar) return;
+
+    sidebar.classList.toggle('is-collapsed', collapsed);
+    if (collapsed) {
+        sidebar.classList.remove('is-open');
+        state.elements.sidebarBackdrop?.classList.remove('is-visible');
+    }
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
+    updateSidebarToggleState();
+}
+
+function toggleSidebar() {
+    if (isMobileLayout()) {
+        if (state.elements.appSidebar?.classList.contains('is-open')) {
+            closeSidebar();
+        } else {
+            openSidebar();
+        }
+        return;
+    }
+
+    const collapsed = state.elements.appSidebar?.classList.contains('is-collapsed');
+    setSidebarCollapsed(!collapsed);
+}
+
 function openSidebar() {
+    if (!isMobileLayout()) {
+        setSidebarCollapsed(false);
+        return;
+    }
     state.elements.appSidebar?.classList.add('is-open');
     state.elements.sidebarBackdrop?.classList.add('is-visible');
+    updateSidebarToggleState();
 }
 
 function closeSidebar() {
+    if (!isMobileLayout()) {
+        setSidebarCollapsed(true);
+        return;
+    }
     state.elements.appSidebar?.classList.remove('is-open');
     state.elements.sidebarBackdrop?.classList.remove('is-visible');
+    updateSidebarToggleState();
+}
+
+function handleSidebarLayoutChange() {
+    if (!isMobileLayout()) {
+        state.elements.appSidebar?.classList.remove('is-open');
+        state.elements.sidebarBackdrop?.classList.remove('is-visible');
+    }
+    updateSidebarToggleState();
+}
+
+function updateSidebarToggleState() {
+    const toggle = state.elements.sidebarToggleBtn;
+    const sidebar = state.elements.appSidebar;
+    if (!toggle || !sidebar) return;
+
+    const expanded = isMobileLayout()
+        ? sidebar.classList.contains('is-open')
+        : !sidebar.classList.contains('is-collapsed');
+
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
 function resizeCanvas() {
@@ -512,6 +719,13 @@ function appendChatMessage(role, content, options = {}) {
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
     avatar.textContent = role === 'user' ? 'You' : 'AI';
+    if (options.thinking) {
+        avatar.classList.add('is-thinking');
+        const indicator = document.createElement('span');
+        indicator.className = 'thinking-indicator';
+        indicator.setAttribute('aria-hidden', 'true');
+        avatar.appendChild(indicator);
+    }
 
     const body = document.createElement('div');
     body.className = 'message-content';
@@ -545,7 +759,7 @@ function addSpeakerButtonToMessage(message, text) {
     button.className = 'speaker-button inline-speaker-button';
     button.title = 'Read this answer aloud';
     button.setAttribute('aria-label', 'Read this answer aloud');
-    button.textContent = '🔊';
+    button.innerHTML = '&#128266;';
     button.addEventListener('click', () => triggerReadAloud(spokenText));
 
     tools.appendChild(button);
@@ -553,6 +767,9 @@ function addSpeakerButtonToMessage(message, text) {
 }
 
 function updateAssistantStreamingMessage(text, complete = false) {
+    if (text || complete) {
+        setAssistantThinking(false);
+    }
     if (!state.activeAssistantMessageEl) {
         state.activeAssistantMessageEl = appendChatMessage('assistant', '', {
             html: '<span class="streaming-cursor"></span>'
@@ -930,10 +1147,16 @@ function handleWebSocketMessage(event) {
 }
 
 function handleStatusMessage(message) {
-    // Only show loading overlay for processing steps, not during recording
     const msg = message.message || '';
-    if (!msg.toLowerCase().includes('recording')) {
-        showLoading(msg);
+    if (state.elements.loadingText) {
+        state.elements.loadingText.textContent = msg;
+    }
+
+    const lower = msg.toLowerCase();
+    if (lower.includes('analyzing')) {
+        setAssistantThinking(true);
+    } else if (lower.includes('transcrib') || lower.includes('recording') || lower.includes('generating')) {
+        setAssistantThinking(false);
     }
 }
 
@@ -981,6 +1204,7 @@ function handleAnalysisMessage(message) {
     const feedbackBox = state.elements.feedbackBox;
 
     if (message.streaming) {
+        setAssistantThinking(false);
         updateAssistantStreamingMessage(message.text, false);
 
         // Append streaming content
@@ -993,6 +1217,7 @@ function handleAnalysisMessage(message) {
             feedbackBox.innerHTML = `<div class="feedback-text">${escapeHtml(message.text)}<span class="streaming-cursor"></span></div>`;
         }
     } else if (message.complete) {
+        setAssistantThinking(false);
         updateAssistantStreamingMessage('', true);
 
         // Remove streaming cursor
@@ -1083,13 +1308,61 @@ function handleAudioMessage(message) {
 
 function handleCompleteMessage() {
     hideLoading();
+    setAssistantThinking(false);
     state.elements.recordingHint.textContent = 'Recording complete! Click to record again.';
+    syncLastAssistantResponse();
+}
+
+function syncLastAssistantResponse() {
+    const chat = state.elements.chatMessages;
+    if (!chat) return;
+
+    const assistantMessages = chat.querySelectorAll('.assistant-message:not(.intro-message)');
+    if (assistantMessages.length === 0) return;
+
+    const lastMessage = assistantMessages[assistantMessages.length - 1];
+    const text = (lastMessage.querySelector('.message-content')?.textContent || '').trim();
+    if (!text) return;
+
+    state.lastAssistantResponse = text;
+    if (state.elements.readAloudBtn) {
+        state.elements.readAloudBtn.disabled = false;
+    }
+    addSpeakerButtonToMessage(lastMessage, text);
 }
 
 function handleErrorMessage(message) {
     hideLoading();
+    setAssistantThinking(false);
     console.error('Server error:', message.message);
     alert(`Error: ${message.message}`);
+}
+
+function setAssistantThinking(isThinking) {
+    if (isThinking && !state.activeAssistantMessageEl) {
+        state.activeAssistantMessageEl = appendChatMessage('assistant', '', {
+            thinking: true,
+            speaker: false
+        });
+    }
+
+    const message = state.activeAssistantMessageEl;
+    if (!message) return;
+
+    const avatar = message.querySelector('.message-avatar');
+    if (!avatar) return;
+
+    avatar.classList.toggle('is-thinking', isThinking);
+
+    const indicator = avatar.querySelector('.thinking-indicator');
+    if (isThinking && !indicator) {
+        const dot = document.createElement('span');
+        dot.className = 'thinking-indicator';
+        dot.setAttribute('aria-hidden', 'true');
+        avatar.appendChild(dot);
+    } else if (!isThinking && indicator) {
+        indicator.remove();
+    }
 }
 
 // ============================================================================
@@ -1229,7 +1502,6 @@ function stopRecording() {
         // Update UI
         updateRecordingUI(false);
         stopTimer();
-        showLoading('Processing audio...');
     }
 }
 
@@ -1686,7 +1958,6 @@ function sendTextMessage() {
     if (!text) return;
 
     resetCurrentFeedback();
-    showLoading('Analyzing text...');
     sendMessage({ type: 'text', text });
     state.elements.textInput.value = '';
 }
@@ -1694,7 +1965,6 @@ function sendTextMessage() {
 function triggerReadAloud(textOverride = '') {
     const text = (textOverride || state.lastAssistantResponse || '').trim();
     if (!text) return;
-    showLoading('Generating voice response...');
     sendMessage({ type: 'read_aloud', text });
 }
 

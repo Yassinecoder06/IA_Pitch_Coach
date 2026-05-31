@@ -15,7 +15,7 @@
                 <span class="brand-icon">AI</span>
                 <span>Pitch Coach</span>
             </a>
-            <button class="icon-button sidebar-close" id="sidebarCloseBtn" title="Close sidebar" type="button">×</button>
+            <button class="icon-button sidebar-close" id="sidebarCloseBtn" title="Close sidebar" type="button">&times;</button>
         </div>
 
         <button class="new-chat-button" id="newSessionBtn" type="button">
@@ -54,7 +54,7 @@
 
     <main class="chat-workspace">
         <header class="chat-topbar">
-            <button class="icon-button sidebar-toggle" id="sidebarToggleBtn" title="Open sidebar" type="button">☰</button>
+            <button class="icon-button sidebar-toggle" id="sidebarToggleBtn" title="Open sidebar" type="button">&#9776;</button>
 
             <div class="topbar-title">
                 <span id="activeSessionTitle">New pitch session</span>
@@ -164,7 +164,7 @@
                         <span class="record-icon" id="recordIcon"></span>
                         <span id="recordText">Record</span>
                     </button>
-                    <button class="icon-button speaker-button" id="readAloudBtn" type="button" title="Read last answer aloud" disabled>🔊</button>
+                    <button class="icon-button speaker-button" id="readAloudBtn" type="button" title="Read last answer aloud" disabled>&#128266;</button>
                     <button class="send-button" id="textSendButton" type="button" title="Send message">Send</button>
                 </div>
             </div>
@@ -193,6 +193,24 @@
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-spinner"></div>
         <p id="loadingText">Processing...</p>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Modal title</h2>
+                <button class="icon-button modal-close" id="modalCloseBtn" type="button" title="Close">&times;</button>
+            </div>
+            <p class="modal-description" id="modalDescription"></p>
+            <div class="modal-body" id="modalBody">
+                <label class="modal-label" id="modalInputLabel" for="modalInput">Session name</label>
+                <input class="modal-input" id="modalInput" type="text" autocomplete="off" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="modalCancelBtn" type="button">Cancel</button>
+                <button class="send-button" id="modalConfirmBtn" type="button">Confirm</button>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

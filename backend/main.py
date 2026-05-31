@@ -349,6 +349,17 @@ async def summarize_session(session_id: str, user_id: str = Depends(require_user
     return {"session_id": session_id, "context_md": summary_md}
 
 
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str, user_id: str = Depends(require_user_id)):
+    if not session_manager.enabled:
+        raise HTTPException(status_code=503, detail="Supabase is not configured")
+
+    deleted = session_manager.delete_session(session_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
+
+
 @app.post("/api/read-aloud")
 async def read_aloud(payload: ReadAloudRequest):
     tts_available, tts_msg = check_piper_available()
@@ -542,6 +553,34 @@ async def websocket_endpoint(websocket: WebSocket):
                 if not text_content:
                     await websocket.send_json({"type": "error", "message": "Text message is empty"})
                     continue
+
+                latest_assistant_response = await process_text_pipeline(
+                    websocket,
+                    text_content,
+                    session_config,
+                    conversation_history,
+                    current_session_id,
+                    session_context_md,
+                    current_user_id,
+                )
+                if current_session_id and session_manager.enabled and current_user_id:
+                    refreshed = session_manager.build_context_window(current_session_id, current_user_id, last_n=SESSION_CONTEXT_WINDOW)
+                    if refreshed:
+                        session_context_md = refreshed.context_md
+
+            elif msg_type == "edit_last_user":
+                text_content = (message.get("text") or "").strip()
+                if not text_content:
+                    await websocket.send_json({"type": "error", "message": "Text message is empty"})
+                    continue
+
+                if conversation_history and conversation_history[-1].get("role") == "assistant":
+                    conversation_history.pop()
+                if conversation_history and conversation_history[-1].get("role") == "user":
+                    conversation_history.pop()
+
+                if current_session_id and session_manager.enabled and current_user_id:
+                    session_manager.delete_last_turn(current_session_id, current_user_id)
 
                 latest_assistant_response = await process_text_pipeline(
                     websocket,
