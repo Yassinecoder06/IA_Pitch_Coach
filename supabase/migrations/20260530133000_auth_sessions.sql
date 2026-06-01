@@ -35,10 +35,6 @@ create table if not exists public.speech_metrics (
   created_at timestamptz not null default now()
 );
 
-alter table public.sessions add column if not exists user_id uuid;
-alter table public.messages add column if not exists user_id uuid;
-alter table public.speech_metrics add column if not exists user_id uuid;
-
 alter table public.sessions alter column user_id set default auth.uid();
 alter table public.messages alter column user_id set default auth.uid();
 alter table public.speech_metrics alter column user_id set default auth.uid();
@@ -128,3 +124,102 @@ create policy metrics_update_own on public.speech_metrics
 drop policy if exists metrics_delete_own on public.speech_metrics;
 create policy metrics_delete_own on public.speech_metrics
   for delete using (auth.uid() = user_id);
+
+create or replace function public.delete_session_owned(p_session_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_owner_id uuid;
+begin
+  if v_user_id is null then
+    raise exception 'Not authenticated' using errcode = '28000';
+  end if;
+
+  select user_id
+    into v_owner_id
+    from public.sessions
+   where id = p_session_id;
+
+  if v_owner_id is null then
+    raise exception 'Session not found' using errcode = 'P0002';
+  end if;
+
+  if v_owner_id <> v_user_id then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+
+  delete from public.sessions
+   where id = p_session_id
+     and user_id = v_user_id;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.delete_session_owned(uuid) from public;
+grant execute on function public.delete_session_owned(uuid) to authenticated;
+
+create or replace function public.delete_last_turn_owned(p_session_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_owner_id uuid;
+  v_deleted integer := 0;
+begin
+  if v_user_id is null then
+    raise exception 'Not authenticated' using errcode = '28000';
+  end if;
+
+  select user_id
+    into v_owner_id
+    from public.sessions
+   where id = p_session_id;
+
+  if v_owner_id is null then
+    raise exception 'Session not found' using errcode = 'P0002';
+  end if;
+
+  if v_owner_id <> v_user_id then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+
+  with latest_messages as (
+    select id
+      from public.messages
+     where session_id = p_session_id
+       and user_id = v_user_id
+     order by created_at desc, id desc
+     limit 2
+  )
+  delete from public.messages m
+   using latest_messages lm
+   where m.id = lm.id;
+
+  get diagnostics v_deleted = row_count;
+
+  if v_deleted > 0 then
+    delete from public.speech_metrics
+     where id in (
+       select id
+         from public.speech_metrics
+        where session_id = p_session_id
+          and user_id = v_user_id
+        order by created_at desc, id desc
+        limit 1
+     );
+  end if;
+
+  return v_deleted;
+end;
+$$;
+
+revoke all on function public.delete_last_turn_owned(uuid) from public;
+grant execute on function public.delete_last_turn_owned(uuid) to authenticated;

@@ -58,11 +58,6 @@ create table if not exists public.speech_metrics (
   created_at timestamptz not null default now()
 );
 
--- Ensure user_id columns exist for existing tables
-alter table public.sessions add column if not exists user_id uuid;
-alter table public.messages add column if not exists user_id uuid;
-alter table public.speech_metrics add column if not exists user_id uuid;
-
 alter table public.sessions alter column user_id set default auth.uid();
 alter table public.messages alter column user_id set default auth.uid();
 alter table public.speech_metrics alter column user_id set default auth.uid();
@@ -180,6 +175,7 @@ How it works:
 1. backend/storage/supabase_client.py creates a Supabase client from env vars.
 2. backend/storage/session_manager.py performs table CRUD and markdown summary updates.
 3. backend/main.py wires REST and WebSocket handlers to SessionManager.
+4. The main migration includes authenticated RPC helpers for deleting a session and deleting the last turn, so delete/edit actions honor `auth.uid()` under RLS.
 
 If SUPABASE_URL or key is missing, session endpoints return disabled/unavailable states and voice coaching still works.
 

@@ -23,7 +23,7 @@ import base64
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -350,13 +350,14 @@ async def summarize_session(session_id: str, user_id: str = Depends(require_user
 
 
 @app.delete("/api/sessions/{session_id}")
-async def delete_session(session_id: str, user_id: str = Depends(require_user_id)):
+async def delete_session(session_id: str, user_id: str = Depends(require_user_id), authorization: Optional[str] = Header(None)):
     if not session_manager.enabled:
         raise HTTPException(status_code=503, detail="Supabase is not configured")
 
-    deleted = session_manager.delete_session(session_id, user_id)
+    deleted, error = session_manager.delete_session_with_error(session_id, user_id, extract_bearer_token(authorization))
     if not deleted:
-        raise HTTPException(status_code=404, detail="Session not found")
+        status = 404 if "not found" in error.lower() else 403 if "unauthorized" in error.lower() else 500
+        raise HTTPException(status_code=status, detail=error or "Session deletion failed")
     return {"ok": True}
 
 
@@ -580,7 +581,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     conversation_history.pop()
 
                 if current_session_id and session_manager.enabled and current_user_id:
-                    session_manager.delete_last_turn(current_session_id, current_user_id)
+                    if not auth_token:
+                        await websocket.send_json({"type": "error", "message": "Sign in again to edit saved messages"})
+                        continue
+                    deleted_turns = session_manager.delete_last_turn(current_session_id, current_user_id, auth_token)
+                    if deleted_turns == 0:
+                        await websocket.send_json({"type": "error", "message": "Unable to edit the latest turn"})
+                        continue
 
                 latest_assistant_response = await process_text_pipeline(
                     websocket,

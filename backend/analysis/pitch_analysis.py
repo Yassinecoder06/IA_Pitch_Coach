@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Any, AsyncGenerator
 
 from backend.llm import get_provider, Message
+from backend.tools.mcp_client import maybe_web_search, tool_awareness_prompt
 from backend.analysis.skill_loader import compose_skills
 
 
@@ -163,6 +164,18 @@ class PitchAnalyzer:
 
         # Build messages
         messages = [Message.system(system_prompt)]
+
+        tool_prompt = tool_awareness_prompt()
+        if tool_prompt:
+            messages.append(Message.system(tool_prompt))
+
+        web_snippets = await maybe_web_search(transcript)
+        if web_snippets:
+            messages.append(
+                Message.system(
+                    f"Web research snippets (use carefully, verify with sources):\n{web_snippets}"
+                )
+            )
 
         # Add markdown memory first, then short message window.
         if context_md and context_md.strip():

@@ -149,6 +149,31 @@ SESSION_CONTEXT_WINDOW=8
 
 Use `SUPABASE_SERVICE_ROLE_KEY` only on the backend. Do not expose it in frontend code.
 
+### MCP Tool Server (Optional)
+
+This project includes a standalone MCP server that provides web tools (DuckDuckGo search + URL fetch). The backend can consume it when enabled.
+
+1. Install MCP server dependencies:
+
+```bash
+pip install -r services/mcp_server/requirements.txt
+```
+
+2. Start the MCP server:
+
+```bash
+python services/mcp_server/server.py
+```
+
+3. Enable it in `.env.local` or `.env`:
+
+```env
+MCP_ENABLED=true
+MCP_AUTO_SEARCH=true
+MCP_SERVER_CMD=python
+MCP_SERVER_ARGS=services/mcp_server/server.py
+```
+
 ### 7. Add Authentication with Supabase
 
 Supabase Auth is the right place to add sign-in for the app. The backend already supports Supabase-backed persistence, but if you want user login, configure it in Supabase first.

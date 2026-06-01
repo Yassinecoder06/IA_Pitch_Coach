@@ -371,6 +371,16 @@ function openModal(options = {}) {
     });
 }
 
+function showMessageModal(title, description, confirmLabel = 'OK') {
+    return openModal({
+        title,
+        description,
+        confirmLabel,
+        showCancel: false,
+        input: false,
+    });
+}
+
 function closeModal(result) {
     const overlay = state.elements.modalOverlay;
     if (overlay) {
@@ -740,9 +750,119 @@ function appendChatMessage(role, content, options = {}) {
     if (role !== 'user' && options.speaker !== false && content) {
         addSpeakerButtonToMessage(message, content);
     }
+    if (role === 'user' && options.editable !== false && content) {
+        addEditButtonToMessage(message, content);
+    }
     state.elements.chatMessages.appendChild(message);
+    syncLatestUserEditButton();
     scrollChatToBottom();
     return message;
+}
+
+function addEditButtonToMessage(message, text) {
+    if (!message || message.querySelector('.message-tools')) return;
+
+    const editableText = (text || message.querySelector('.message-content')?.textContent || '').trim();
+    if (!editableText) return;
+
+    const tools = document.createElement('div');
+    tools.className = 'message-tools';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'edit-button inline-edit-button';
+    button.title = 'Edit this message';
+    button.setAttribute('aria-label', 'Edit this message');
+    button.innerHTML = '&#9998;';
+    button.addEventListener('click', () => editUserMessage(message, editableText));
+
+    tools.appendChild(button);
+    message.appendChild(tools);
+}
+
+function syncLatestUserEditButton() {
+    if (!state.elements.chatMessages) return;
+
+    const userMessages = Array.from(state.elements.chatMessages.querySelectorAll('.user-message'));
+    const latest = userMessages[userMessages.length - 1] || null;
+
+    for (const message of userMessages) {
+        const tools = message.querySelector('.message-tools');
+        if (tools && message !== latest) {
+            tools.remove();
+        }
+    }
+
+    if (latest && !latest.querySelector('.inline-edit-button')) {
+        const text = latest.querySelector('.message-content')?.textContent || '';
+        if (text.trim()) {
+            addEditButtonToMessage(latest, text);
+        }
+    }
+}
+
+async function editUserMessage(message, currentText) {
+    if (!message) return;
+
+    const result = await openModal({
+        title: 'Edit Message',
+        description: 'Update your last message and regenerate the AI reply.',
+        confirmLabel: 'Regenerate reply',
+        cancelLabel: 'Cancel',
+        input: true,
+        inputValue: currentText,
+        inputPlaceholder: 'Edit your message',
+        inputLabel: 'Your message',
+    });
+
+    if (!result.confirmed) return;
+
+    const editedText = (result.value || '').trim();
+    if (!editedText) return;
+
+    state.pendingEditMessageEl = message;
+    removeLastAssistantMessage();
+    replaceLastUserHistoryEntry(editedText);
+    message.querySelector('.message-content').textContent = editedText;
+    removeMessageTools(message);
+    syncLatestUserEditButton();
+    state.lastAssistantResponse = '';
+    if (state.elements.readAloudBtn) {
+        state.elements.readAloudBtn.disabled = true;
+    }
+
+    if (state.wsConnected) {
+        sendMessage({ type: 'edit_last_user', text: editedText });
+    }
+}
+
+function removeLastAssistantMessage() {
+    if (!state.elements.chatMessages) return;
+
+    const messages = Array.from(state.elements.chatMessages.querySelectorAll('.assistant-message:not(.intro-message)'));
+    const lastAssistant = messages[messages.length - 1];
+    if (lastAssistant) {
+        lastAssistant.remove();
+    }
+
+    if (state.conversationHistory.length >= 2) {
+        state.conversationHistory.pop();
+    }
+    updateHistoryUI();
+}
+
+function replaceLastUserHistoryEntry(text) {
+    for (let index = state.conversationHistory.length - 1; index >= 0; index--) {
+        if (state.conversationHistory[index].role === 'user') {
+            state.conversationHistory[index] = { role: 'user', content: text };
+            updateHistoryUI();
+            break;
+        }
+    }
+}
+
+function removeMessageTools(message) {
+    message.querySelector('.message-tools')?.remove();
 }
 
 function addSpeakerButtonToMessage(message, text) {
@@ -1165,14 +1285,32 @@ function handleTranscriptMessage(message) {
 
     if (message.final) {
         transcriptBox.innerHTML = `<p class="transcript-text">${escapeHtml(message.text)}</p>`;
-        appendChatMessage('user', message.text);
+        const editingMessage = state.pendingEditMessageEl;
+        if (editingMessage) {
+            editingMessage.querySelector('.message-content').textContent = message.text;
+            state.pendingEditMessageEl = null;
+            syncLatestUserEditButton();
+        } else {
+            appendChatMessage('user', message.text);
+        }
 
         // Add to conversation history for display
         if (state.currentMode !== 'pitch_analysis') {
-            state.conversationHistory.push({
-                role: 'user',
-                content: message.text
-            });
+            if (editingMessage) {
+                const lastUserIndex = [...state.conversationHistory].reverse().findIndex((turn) => turn.role === 'user');
+                if (lastUserIndex !== -1) {
+                    const actualIndex = state.conversationHistory.length - 1 - lastUserIndex;
+                    state.conversationHistory[actualIndex] = {
+                        role: 'user',
+                        content: message.text
+                    };
+                }
+            } else {
+                state.conversationHistory.push({
+                    role: 'user',
+                    content: message.text
+                });
+            }
             updateHistoryUI();
         }
     } else {
@@ -1219,6 +1357,7 @@ function handleAnalysisMessage(message) {
     } else if (message.complete) {
         setAssistantThinking(false);
         updateAssistantStreamingMessage('', true);
+        state.pendingEditMessageEl = null;
 
         // Remove streaming cursor
         const cursor = feedbackBox.querySelector('.streaming-cursor');
@@ -1311,6 +1450,7 @@ function handleCompleteMessage() {
     setAssistantThinking(false);
     state.elements.recordingHint.textContent = 'Recording complete! Click to record again.';
     syncLastAssistantResponse();
+    state.pendingEditMessageEl = null;
 }
 
 function syncLastAssistantResponse() {
@@ -1334,8 +1474,9 @@ function syncLastAssistantResponse() {
 function handleErrorMessage(message) {
     hideLoading();
     setAssistantThinking(false);
+    state.pendingEditMessageEl = null;
     console.error('Server error:', message.message);
-    alert(`Error: ${message.message}`);
+    void showMessageModal('Error', message.message || 'Something went wrong.');
 }
 
 function setAssistantThinking(isThinking) {
@@ -1490,7 +1631,7 @@ async function startRecording() {
 
     } catch (error) {
         console.error('Failed to start recording:', error);
-        alert('Failed to access microphone. Please ensure microphone permissions are granted.');
+        await showMessageModal('Microphone Unavailable', 'Failed to access microphone. Please ensure microphone permissions are granted.');
     }
 }
 
@@ -1638,7 +1779,7 @@ function visualize() {
 async function processRecordedAudio() {
     if (state.audioChunks.length === 0) {
         hideLoading();
-        alert('No audio recorded. Please try again.');
+        await showMessageModal('No Audio Recorded', 'No audio was recorded. Please try again.');
         return;
     }
 
@@ -1664,7 +1805,7 @@ async function processRecordedAudio() {
     } catch (error) {
         console.error('Failed to process audio:', error);
         hideLoading();
-        alert('Failed to process audio. Please try again.');
+        await showMessageModal('Audio Not Processed', 'Failed to process audio. Please try again.');
     }
 }
 
@@ -1878,21 +2019,35 @@ function populateSessionSelect() {
         }
 
         if (list) {
-            const item = document.createElement('button');
-            item.type = 'button';
+            const item = document.createElement('div');
             item.className = 'session-item';
             item.classList.toggle('active', session.id === state.currentSessionId);
             item.dataset.sessionId = session.id;
             item.innerHTML = `
-                <span class="session-title">${escapeHtml(session.title || 'Untitled')}</span>
-                <span class="session-meta">${escapeHtml(session.current_mode || 'pitch_analysis')}</span>
+                <button type="button" class="session-open" aria-label="Open ${escapeHtml(session.title || 'Untitled')}">
+                    <span class="session-title">${escapeHtml(session.title || 'Untitled')}</span>
+                    <span class="session-meta">${escapeHtml(session.current_mode || 'pitch_analysis')}</span>
+                </button>
+                <div class="session-actions">
+                    <button type="button" class="session-action session-delete" aria-label="Delete ${escapeHtml(session.title || 'Untitled')}">Delete</button>
+                </div>
             `;
-            item.addEventListener('click', () => {
+
+            const openButton = item.querySelector('.session-open');
+            const deleteButton = item.querySelector('.session-delete');
+
+            openButton?.addEventListener('click', () => {
                 if (state.elements.sessionSelect) {
                     state.elements.sessionSelect.value = session.id;
                 }
                 resumeSelectedSession();
             });
+
+            deleteButton?.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                await deleteSession(session.id, session.title || 'Untitled');
+            });
+
             list.appendChild(item);
         }
     }
@@ -1906,7 +2061,7 @@ function populateSessionSelect() {
     }
 }
 
-function createSession() {
+async function createSession() {
     if (!state.authUser) {
         state.currentSessionId = null;
         state.conversationHistory = [];
@@ -1918,9 +2073,21 @@ function createSession() {
         closeSidebar();
         return;
     }
-    const title = window.prompt('Session title', 'Startup Pitch Practice');
-    if (title === null) return;
-    sendMessage({ type: 'create_session', title: title.trim() || 'Startup Pitch Practice' });
+
+    const result = await openModal({
+        title: 'New Session',
+        description: 'Name this session before saving it to your account.',
+        confirmLabel: 'Create session',
+        cancelLabel: 'Cancel',
+        input: true,
+        inputValue: 'Startup Pitch Practice',
+        inputPlaceholder: 'Session name',
+        inputLabel: 'Session name',
+    });
+
+    if (!result.confirmed) return;
+    const title = (result.value || '').trim() || 'Startup Pitch Practice';
+    sendMessage({ type: 'create_session', title });
 }
 
 function resumeSelectedSession() {
@@ -1935,7 +2102,7 @@ function resumeSelectedSession() {
 
 async function saveSessionSummary() {
     if (!state.currentSessionId) {
-        alert('Create or resume a session first.');
+        await showMessageModal('No Active Session', 'Create or resume a session first.');
         return;
     }
     if (!state.authUser) {
@@ -1949,7 +2116,54 @@ async function saveSessionSummary() {
             throw new Error('Failed to save session summary');
         }
     } catch (error) {
-        alert(`Failed to save summary: ${error.message}`);
+        await showMessageModal('Summary Not Saved', `Failed to save summary: ${error.message}`);
+    }
+}
+
+async function deleteSession(sessionId, sessionTitle) {
+    const result = await openModal({
+        title: 'Delete Session',
+        description: `Delete \"${sessionTitle}\"? This removes the session and all of its messages.`,
+        confirmLabel: 'Delete session',
+        cancelLabel: 'Cancel',
+        confirmTone: 'danger',
+        showCancel: true,
+        input: false,
+    });
+
+    if (!result.confirmed) return;
+
+    try {
+        const response = await authFetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+        if (!response.ok) {
+            let detail = 'Failed to delete session';
+            try {
+                const data = await response.json();
+                if (data?.detail) {
+                    detail = data.detail;
+                }
+            } catch (error) {
+                // ignore parse errors
+            }
+            throw new Error(detail);
+        }
+
+        if (state.currentSessionId === sessionId) {
+            state.currentSessionId = null;
+            state.conversationHistory = [];
+            state.lastAssistantResponse = '';
+            state.pendingEditMessageEl = null;
+            resetResultsUI();
+            if (state.elements.activeSessionTitle) {
+                state.elements.activeSessionTitle.textContent = 'New pitch session';
+            }
+            sendConfig();
+        }
+
+        await loadSessions();
+    } catch (error) {
+        updateAuthUI(`Unable to delete session: ${error.message}`);
+        await showMessageModal('Session Not Deleted', error.message || 'Unable to delete this session.');
     }
 }
 

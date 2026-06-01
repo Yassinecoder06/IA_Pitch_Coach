@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
+from urllib import request, error
 from typing import Any, Dict, List, Optional
 
 from backend.storage.supabase_client import get_supabase_client
@@ -143,65 +146,35 @@ class SessionManager:
 
         self.client.table("sessions").update({"context_md": context_md, "updated_at": datetime.utcnow().isoformat()}).eq("id", session_id).eq("user_id", user_id).execute()
 
-    def delete_session(self, session_id: str, user_id: str) -> bool:
+    def delete_session(self, session_id: str, user_id: str, auth_token: Optional[str] = None) -> bool:
+        ok, _ = self.delete_session_with_error(session_id, user_id, auth_token)
+        return ok
+
+    def delete_session_with_error(self, session_id: str, user_id: str, auth_token: Optional[str] = None) -> tuple[bool, str]:
         if not self.enabled:
-            return False
+            return False, "Supabase is not configured"
 
-        result = (
-            self.client
-            .table("sessions")
-            .delete()
-            .eq("id", session_id)
-            .eq("user_id", user_id)
-            .execute()
-        )
-        rows = result.data or []
-        return len(rows) > 0
+        direct_deleted, direct_error = self._delete_session_direct(session_id, user_id)
+        if direct_deleted:
+            return True, ""
 
-    def delete_last_turn(self, session_id: str, user_id: str) -> int:
+        rpc_result = self._call_rpc_via_rest("delete_session_owned", {"p_session_id": session_id}, auth_token)
+        if isinstance(rpc_result, dict) and rpc_result.get("__error__"):
+            return False, direct_error or str(rpc_result.get("__error__"))
+        if rpc_result is None:
+            return False, direct_error or "RPC unavailable or unauthorized"
+        return True, ""
+
+    def delete_last_turn(self, session_id: str, user_id: str, auth_token: Optional[str] = None) -> int:
         if not self.enabled:
             return 0
 
-        result = (
-            self.client
-            .table("messages")
-            .select("id,role")
-            .eq("session_id", session_id)
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(2)
-            .execute()
-        )
-        rows = result.data or []
-        ids_to_delete: List[str] = []
-
-        if rows:
-            if rows[0].get("role") == "assistant":
-                ids_to_delete.append(rows[0]["id"])
-                if len(rows) > 1 and rows[1].get("role") == "user":
-                    ids_to_delete.append(rows[1]["id"])
-            elif rows[0].get("role") == "user":
-                ids_to_delete.append(rows[0]["id"])
-
-        if ids_to_delete:
-            self.client.table("messages").delete().in_("id", ids_to_delete).execute()
-            self._touch_session(session_id, user_id)
-
-        metrics = (
-            self.client
-            .table("speech_metrics")
-            .select("id")
-            .eq("session_id", session_id)
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        ) if self.enabled else None
-        metric_rows = metrics.data or [] if metrics else []
-        if metric_rows:
-            self.client.table("speech_metrics").delete().in_("id", [metric_rows[0]["id"]]).execute()
-
-        return len(ids_to_delete)
+        rpc_result = self._call_rpc_via_rest("delete_last_turn_owned", {"p_session_id": session_id}, auth_token)
+        if isinstance(rpc_result, int):
+            return rpc_result
+        if isinstance(rpc_result, bool) and rpc_result:
+            return 1
+        return 0
 
     def build_context_window(self, session_id: str, user_id: str, last_n: int = 8) -> Optional[SessionContextWindow]:
         session = self.get_session(session_id, user_id)
@@ -298,3 +271,53 @@ class SessionManager:
         if not self.enabled:
             return
         self.client.table("sessions").update({"updated_at": datetime.utcnow().isoformat()}).eq("id", session_id).eq("user_id", user_id).execute()
+
+    def _delete_session_direct(self, session_id: str, user_id: str) -> tuple[bool, str]:
+        """Delete after backend auth has already verified the owner token."""
+        session = self.get_session(session_id, user_id)
+        if not session:
+            return False, "Session not found for this user"
+
+        try:
+            self.client.table("speech_metrics").delete().eq("session_id", session_id).eq("user_id", user_id).execute()
+            self.client.table("messages").delete().eq("session_id", session_id).eq("user_id", user_id).execute()
+            self.client.table("sessions").delete().eq("id", session_id).eq("user_id", user_id).execute()
+        except Exception as exc:
+            return False, str(exc)
+
+        if self.get_session(session_id, user_id):
+            return False, "Session delete did not remove the row"
+        return True, ""
+
+    def _call_rpc_via_rest(self, procedure: str, payload: Dict[str, Any], auth_token: Optional[str]) -> Optional[Any]:
+        supabase_url = (os.getenv("SUPABASE_URL", "") or "").strip().rstrip("/")
+        supabase_key = (
+            (os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()
+            or (os.getenv("SUPABASE_ANON_KEY", "") or "").strip()
+        )
+        if not supabase_url or not supabase_key or not auth_token:
+            return None
+
+        url = f"{supabase_url}/rest/v1/rpc/{procedure}"
+        req = request.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST")
+        req.add_header("apikey", supabase_key)
+        req.add_header("Authorization", f"Bearer {auth_token}")
+        req.add_header("Content-Type", "application/json")
+
+        try:
+            with request.urlopen(req, timeout=10) as resp:
+                body = resp.read().decode("utf-8").strip()
+                if not body:
+                    return True
+                return json.loads(body)
+        except error.HTTPError as http_error:
+            try:
+                body = http_error.read().decode("utf-8", errors="ignore").strip()
+            except Exception:
+                body = ""
+            if http_error.code == 404:
+                return None
+            detail = body or http_error.reason or "RPC error"
+            return {"__error__": f"{http_error.code}: {detail}"}
+        except Exception as exc:
+            return {"__error__": str(exc)}

@@ -30,6 +30,9 @@ pyAudioAnalysis>=0.3.14
 # === Persistence ===
 supabase>=2.4.0
 
+# === MCP Tooling ===
+mcp>=1.2.0
+
 # === Utilities ===
 python-multipart>=0.0.6  # For file uploads
 python-dotenv>=1.0.0     # Environment configuration

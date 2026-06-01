@@ -112,7 +112,6 @@ input:disabled {
 .chat-topbar,
 .model-controls,
 .composer-actions,
-.secondary-actions,
 .modal-header,
 .modal-actions,
 .edit-actions {
@@ -835,14 +834,6 @@ input:disabled {
     font-size: 0.78rem;
 }
 
-.secondary-actions {
-    justify-content: center;
-    gap: 8px;
-    width: min(850px, 100%);
-    margin: 8px auto 0;
-    flex-wrap: wrap;
-}
-
 .visualizer-container {
     display: none;
     width: min(850px, 100%);
@@ -1316,10 +1307,6 @@ input:disabled {
     .composer-actions {
         justify-content: flex-end;
         flex-wrap: wrap;
-    }
-
-    .secondary-actions {
-        display: none;
     }
 
     .insights-panel {
