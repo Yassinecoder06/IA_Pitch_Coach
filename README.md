@@ -1,172 +1,257 @@
 # AI Pitch Coach
 
-AI Pitch Coach is a modular voice coaching app for practicing startup pitches and public speaking. It combines faster-whisper for speech-to-text, Piper for text-to-speech, multiple LLM providers, and optional Supabase-backed session persistence.
+AI Pitch Coach is a real-time, voice-first coaching application for startup pitch practice and public speaking improvement. It combines faster-whisper for speech-to-text, Piper for text-to-speech, multiple LLM providers, and optional Supabase-backed session persistence.
 
-## What You Need
+The platform captures spoken input from the browser, transcribes speech, analyzes content with a selectable LLM provider, and returns both written and spoken coaching feedback.
+
+## Features
+
+- **Real-time Voice Pipeline:** WebSocket-based streaming audio capture and response.
+- **Speech-to-Text (STT):** Local transcription using faster-whisper.
+- **Dynamic Provider Registry:** Multi-provider LLM orchestration supporting Ollama, OpenAI, Anthropic, Google, Azure, DeepSeek, and more.
+- **Text-to-Speech (TTS):** Real-time synthesized feedback with Piper.
+- **Browser-based UI:** Plain HTML/CSS/JS frontend featuring live transcripts, streaming analysis, scorecards, and audio playback.
+- **Coaching Modes:** Pitch Analysis, Interactive Coaching, Investor Q&A, and more.
+- **Filler-word Detection:** Real-time computation and reporting.
+- **Session Persistence:** Optional Supabase integration for storing sessions, messages, and speech metrics.
+- **MCP Tool Server:** Optional standalone server for web search and URL fetching.
+
+## Coaching Modes & AI Skills
+
+The application uses specific AI skill prompts (located in `backend/skills/*.md`) to drive the LLM behavior:
+
+- **Pitch Analysis:** Evaluates clarity, language, confidence, and topic relevance with structured scoring and actionable advice.
+- **Interactive Coaching:** Provides back-and-forth conversational feedback, offering one specific piece of advice per turn.
+- **Investor Q&A:** Simulates a seasoned investor probing problem/solution fit, market size, competition, and traction.
+- **Conversation Practice:** Supportive partner for general speaking practice and communication coaching.
+- **Delivery Coaching:** Focuses on pace, pauses, filler words, and vocal confidence.
+- **Objection Handling:** Helps speakers identify hidden concerns and formulate calm, direct answers to common investor pushback.
+- **Pitch Rewrite:** Suggests clearer, more concise wording that leads with customer pain and specific outcomes.
+- **Web Research:** Integrates live market facts, competitor context, and investor information into coaching responses.
+
+## System Architecture
+
+1. Browser records microphone audio and streams chunks over WebSocket.
+2. Backend combines chunks to WAV.
+3. faster-whisper transcribes audio and returns transcript + confidence.
+4. Filler-word analyzer computes count + details.
+5. Pitch analyzer streams LLM response in chunks.
+6. Backend streams text feedback to client in real time.
+7. Backend sends scores (for pitch-analysis mode).
+8. Backend synthesizes TTS sentence-by-sentence and streams WAV audio chunks back.
+
+**Main Components:**
+- Backend API and WebSocket server: FastAPI
+- STT engine: faster-whisper
+- LLM layer: Local and cloud providers via unified interfaces
+- TTS engine: Piper
+- Frontend: HTML/CSS/JavaScript UI
+
+---
+
+## Quick Start & Setup
+
+### 1. Requirements
 
 - Python 3.10 or newer
 - 8 GB RAM minimum
 - A browser with microphone access
-- Optional local LLM runtime: Ollama
-- Optional Supabase project for session storage and authentication
 
-## What This Project Uses
+### 2. Environment Setup
 
-- `requirements.txt` for Python dependencies
-- faster-whisper for transcription
-- Piper for voice output
-- Supabase for sessions, messages, and speech metrics
-- `backend/config/settings.py` loads `.env.local` first, then `.env`
-
-## Quick Start
-
-### 1. Create a Virtual Environment
-
+Create a virtual environment:
 ```bash
 python -m venv .venv
-```
-
-Activate it:
-
-```bash
 # Windows
 .venv\Scripts\activate
-
 # macOS / Linux
 source .venv/bin/activate
 ```
 
-### 2. Install Python Requirements
-
+Install Python requirements:
 ```bash
 pip install -r requirements.txt
 ```
 
-This installs the backend runtime plus the Supabase Python client.
+Create your environment file:
+```bash
+cp .env.example .env.local
+```
+*(On Windows, use `copy .env.example .env.local`)*
 
-### 3. Install Whisper Support
+### 3. Install Speech-to-Text (faster-whisper)
 
-The app uses faster-whisper. The model downloads automatically on first run into `models/whisper`, but you can choose the size in your environment file.
+The app uses `faster-whisper`. You can explicitly pre-cache the `tiny` English model using Python:
 
-Recommended settings for a CPU machine:
+```bash
+python -c "from faster_whisper import WhisperModel; WhisperModel('tiny.en', device='cpu', compute_type='int8', download_root='models/whisper')"
+```
 
+Set your preferred model size and settings in `.env.local`:
 ```env
-WHISPER_MODEL_SIZE=tiny
+WHISPER_MODEL_SIZE=tiny.en
 WHISPER_DEVICE=cpu
 WHISPER_COMPUTE_TYPE=int8
 WHISPER_LANGUAGE=en
 WHISPER_MODELS_DIR=models/whisper
 ```
+*(Available sizes: `tiny`, `tiny.en`, `base`, `small`, `medium`, `large-v3`)*
 
-If you want to pre-download manually, just start the backend once after setting the model size. faster-whisper will fetch the model into the configured folder.
+### 4. Install Text-to-Speech (Piper)
 
-### 4. Install Piper TTS
-
-You can install Piper manually:
+Install the Piper TTS library:
 
 ```bash
 pip install piper-tts
 ```
 
-The backend can also auto-install Piper and download the default voice model on startup when `AUTO_INSTALL_TTS=true`.
+Download the `en_US-lessac-medium` voice model:
 
+```bash
+# Linux / macOS / Windows (Git Bash or PowerShell with curl)
+mkdir -p models/piper
+cd models/piper
+curl -L -O https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+curl -L -O https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json
+cd ../..
+```
+
+*(Optional) The backend can also auto-install Piper voices at runtime if you set `AUTO_INSTALL_TTS=true` in your `.env.local`.*
+
+### 5. Local LLM (Ollama)
+
+Ollama is optional but recommended for local processing.
+1. Download from [Ollama.com](https://ollama.com/download)
+2. Run in a terminal:
+```bash
+ollama pull qwen3:0.6b
+ollama serve
+```
+
+Configure your `.env.local`:
 ```env
-AUTO_INSTALL_TTS=true
-PIPER_VOICE=en_US-lessac-medium
-PIPER_MODELS_DIR=models/piper
+DEFAULT_LLM=ollama
+OLLAMA_ENDPOINT=http://localhost:11434
 ```
+You can also configure cloud providers (OpenAI, Anthropic, Google, etc.) by adding their respective API keys.
 
-If you want to download the voice files yourself, place these in `models/piper`:
+---
 
-```bash
-en_US-lessac-medium.onnx
-en_US-lessac-medium.onnx.json
-```
+## Extended Setup
 
-### 5. Install Ollama for a Local LLM
+### Supabase Integration (Sessions & Metrics)
 
-Ollama is optional, but it is the easiest local provider to use.
+Supabase provides persistent session history, messages, and speech metrics.
 
-Windows:
-
-1. Download Ollama from https://ollama.com/download
-2. Open a terminal and run:
-
-```bash
-ollama pull qwen3:0.6b
-ollama serve
-```
-
-macOS / Linux:
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3:0.6b
-ollama serve
-```
-
-### 6. Set Up Supabase
-
-Supabase is used for session persistence, message history, and speech metrics. You can use either a cloud Supabase project or a local Supabase instance.
-
-#### Cloud Supabase
-
-1. Create a project at https://supabase.com.
-2. From Project Settings > API, copy:
-   - Project URL
-   - `anon` public key
-   - `service_role` key
-3. Create the required tables.
-4. Add the Supabase values to your `.env.local` or `.env` file.
-
-#### Local Supabase
-
-1. Install the Supabase CLI.
-2. Start local services with `supabase start`.
-3. Use the local API URL and keys from the CLI output.
-4. Create the required tables in the local database.
-
-#### Required Supabase Tables
-
-The backend expects these tables:
-
-- `sessions`
-- `messages`
-- `speech_metrics`
-
-The full SQL schema is documented in [docs/supabase_setup.md](docs/supabase_setup.md).
-
-#### Supabase Environment Variables
-
-Add these to `.env.local` for local development or `.env` for shared defaults:
-
+1. **Create a Project:** Go to [Supabase](https://supabase.com) and create a project.
+2. **Environment Variables:** Add to `.env.local`:
 ```env
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 SUPABASE_ANON_KEY=YOUR_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 SESSION_CONTEXT_WINDOW=8
 ```
+*(Note: Use `SUPABASE_SERVICE_ROLE_KEY` only on the backend.)*
 
-Use `SUPABASE_SERVICE_ROLE_KEY` only on the backend. Do not expose it in frontend code.
+3. **Database Schema:** Run the following SQL in the Supabase SQL Editor to create required tables and policies:
 
-### MCP Tool Server (Optional)
+<details>
+<summary>Click to view full SQL schema</summary>
 
-This project includes a standalone MCP server that provides web tools (DuckDuckGo search + URL fetch). The backend can consume it when enabled.
+```sql
+create extension if not exists pgcrypto;
 
-1. Install MCP server dependencies:
+create table if not exists public.sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  title text not null default 'Untitled Session',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  current_mode text not null default 'pitch_analysis',
+  context_md text not null default ''
+);
 
-```bash
-pip install -r services/mcp_server/requirements.txt
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  role text not null check (role in ('user', 'assistant')),
+  content text not null,
+  transcript text,
+  created_at timestamptz not null default now(),
+  audio_url text
+);
+
+create table if not exists public.speech_metrics (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  words_per_minute double precision not null default 0,
+  pause_frequency double precision not null default 0,
+  pause_duration double precision not null default 0,
+  energy_variation double precision not null default 0,
+  rhythm_score double precision not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table public.sessions alter column user_id set default auth.uid();
+alter table public.messages alter column user_id set default auth.uid();
+alter table public.speech_metrics alter column user_id set default auth.uid();
+
+create index if not exists idx_messages_session_created_at on public.messages(session_id, created_at);
+create index if not exists idx_speech_metrics_session_created_at on public.speech_metrics(session_id, created_at desc);
+create index if not exists idx_sessions_updated_at on public.sessions(updated_at desc);
+create index if not exists idx_sessions_user_updated_at on public.sessions(user_id, updated_at desc);
+create index if not exists idx_messages_user_session_created_at on public.messages(user_id, session_id, created_at);
+create index if not exists idx_speech_metrics_user_session_created_at on public.speech_metrics(user_id, session_id, created_at desc);
+
+create or replace function public.set_updated_at() returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_sessions_set_updated_at on public.sessions;
+create trigger trg_sessions_set_updated_at before update on public.sessions for each row execute function public.set_updated_at();
+
+alter table public.sessions enable row level security;
+alter table public.messages enable row level security;
+alter table public.speech_metrics enable row level security;
+
+create policy sessions_select_own on public.sessions for select using (auth.uid() = user_id);
+create policy sessions_insert_own on public.sessions for insert with check (auth.uid() = user_id);
+create policy sessions_update_own on public.sessions for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy sessions_delete_own on public.sessions for delete using (auth.uid() = user_id);
+
+create policy messages_select_own on public.messages for select using (auth.uid() = user_id);
+create policy messages_insert_own on public.messages for insert with check (auth.uid() = user_id);
+create policy messages_update_own on public.messages for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy messages_delete_own on public.messages for delete using (auth.uid() = user_id);
+
+create policy metrics_select_own on public.speech_metrics for select using (auth.uid() = user_id);
+create policy metrics_insert_own on public.speech_metrics for insert with check (auth.uid() = user_id);
+create policy metrics_update_own on public.speech_metrics for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy metrics_delete_own on public.speech_metrics for delete using (auth.uid() = user_id);
 ```
+</details>
 
-2. Start the MCP server:
+*(If you only need shared session storage and not user login, the backend will operate correctly with just the `SUPABASE_SERVICE_ROLE_KEY`.)*
 
+### MCP Tool Server (Web Research)
+
+The application includes a standalone MCP (Model Context Protocol) server for web tools like `web_search` and `fetch_url`.
+
+1. **Install Dependencies:**
 ```bash
-python services/mcp_server/server.py
+cd services/mcp_server
+pip install -r requirements.txt
 ```
-
-3. Enable it in `.env.local` or `.env`:
-
+2. **Run Independently:**
+```bash
+python server.py
+```
+3. **Enable in Backend:** Add to `.env.local`:
 ```env
 MCP_ENABLED=true
 MCP_AUTO_SEARCH=true
@@ -174,164 +259,33 @@ MCP_SERVER_CMD=python
 MCP_SERVER_ARGS=services/mcp_server/server.py
 ```
 
-### 7. Add Authentication with Supabase
+---
 
-Supabase Auth is the right place to add sign-in for the app. The backend already supports Supabase-backed persistence, but if you want user login, configure it in Supabase first.
+## Running the Application
 
-Recommended setup:
+### Local Workflow
 
-1. In Supabase Dashboard, open Authentication.
-2. Enable Email/Password auth or your preferred OAuth provider.
-3. Set your site URL and redirect URLs for local development and production.
-4. Keep using the `anon` key in browser-facing code.
-5. Keep using the `service_role` key only in backend code.
-6. If you later add user-aware session filtering, scope rows by authenticated user ID.
-
-If you only want shared session storage and do not need login yet, Supabase still works with the backend using the keys above.
-
-### 8. Create Your Environment File
-
-Copy the example file and edit it:
-
-```bash
-copy .env.example .env.local
-```
-
-or on macOS / Linux:
-
-```bash
-cp .env.example .env.local
-```
-
-Minimum useful configuration:
-
-```env
-DEFAULT_LLM=ollama
-OLLAMA_ENDPOINT=http://localhost:11434
-
-WHISPER_MODEL_SIZE=tiny
-WHISPER_DEVICE=cpu
-
-PIPER_VOICE=en_US-lessac-medium
-
-SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
-SUPABASE_ANON_KEY=YOUR_ANON_KEY
-```
-
-Add cloud LLM keys only if you want those providers enabled:
-
-```env
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GOOGLE_API_KEY=
-AZURE_OPENAI_ENDPOINT=
-AZURE_OPENAI_API_KEY=
-DEEPSEEK_API_KEY=
-MISTRAL_API_KEY=
-GROK_API_KEY=
-```
-
-### 9. Run the Backend
-
+1. Start the FastAPI backend:
 ```bash
 cd backend
 python main.py
 ```
+2. Open the web UI at `http://localhost:8000`
 
-Open the web UI at http://localhost:8000
+### Docker Deployment
 
-## Environment Reference
-
-### Core Settings
-
-```env
-DEFAULT_LLM=ollama
-DEFAULT_MODEL=
-HOST=0.0.0.0
-PORT=8000
-DEBUG=false
-PRELOAD_STT_MODEL=true
-SESSION_CONTEXT_WINDOW=8
-```
-
-### Speech-to-Text Settings
-
-```env
-WHISPER_MODEL_SIZE=tiny
-WHISPER_DEVICE=cpu
-WHISPER_COMPUTE_TYPE=int8
-WHISPER_LANGUAGE=en
-WHISPER_MODELS_DIR=models/whisper
-```
-
-### Text-to-Speech Settings
-
-```env
-PIPER_VOICE=en_US-lessac-medium
-PIPER_MODELS_DIR=models/piper
-AUTO_INSTALL_TTS=true
-```
-
-### Supabase Settings
-
-```env
-SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
-SUPABASE_ANON_KEY=YOUR_ANON_KEY
-```
-
-## Coaching Modes
-
-1. Pitch Analysis Mode - structured feedback with scores and suggestions
-2. Interactive Coaching Mode - refine your pitch through conversation
-3. Investor Q&A Mode - practice answering investor questions
-
-## Docker
-
-If you prefer Docker, the repository includes files in `docker/`.
-
+The repository includes a multi-stage Dockerfile and a Compose stack.
 ```bash
 cd docker
 docker-compose up --build
 ```
+This sets up the backend alongside Ollama, with volumes mapped for persistent models.
 
-## Troubleshooting
-
-### Ollama does not connect
-
-1. Make sure Ollama is running with `ollama serve`
-2. Check your model is installed with `ollama list`
-3. Pull the default model again with `ollama pull qwen3:0.6b`
-
-### Piper does not start
-
-1. Run `pip install piper-tts`
-2. Confirm `models/piper/en_US-lessac-medium.onnx` exists
-3. Leave `AUTO_INSTALL_TTS=true` if you want the backend to bootstrap it automatically
-
-### Whisper does not load
-
-1. Confirm faster-whisper is installed from `requirements.txt`
-2. Check the `WHISPER_MODEL_SIZE` and `WHISPER_MODELS_DIR` values
-3. Delete the cached model folder and restart if the download was interrupted
-
-### Supabase is disabled
-
-1. Confirm `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set
-2. Make sure the `sessions`, `messages`, and `speech_metrics` tables exist
-3. Verify the Supabase keys are copied from the correct project
-
-### Authentication is not working yet
-
-1. Enable Auth in the Supabase dashboard
-2. Set the correct redirect URLs
-3. Keep `SUPABASE_ANON_KEY` in browser-side code and `SUPABASE_SERVICE_ROLE_KEY` only on the backend
+---
 
 ## API Reference
 
 ### REST Endpoints
-
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Serve frontend |
@@ -341,23 +295,23 @@ docker-compose up --build
 | `/api/models/{provider}` | GET | Models for a provider |
 | `/api/settings` | GET | Current settings |
 | `/api/sessions` | GET, POST | List or create Supabase sessions |
-| `/api/sessions/{session_id}` | GET | Fetch a session and its recent messages |
-| `/api/sessions/{session_id}/mode` | PATCH | Update the stored coaching mode |
-| `/api/sessions/{session_id}/summary` | POST | Generate a compact context summary |
+| `/api/sessions/{id}` | GET | Fetch session and recent messages |
+| `/api/sessions/{id}/mode` | PATCH | Update coaching mode |
+| `/api/sessions/{id}/summary`| POST | Generate context summary |
 
-### WebSocket Messages
+### WebSocket Protocol
+- **Client Messages:** `config`, `start`, `audio`, `stop`, `reset`, `ping`
+- **Server Messages:** `config_ack`, `status`, `transcript`, `filler_words`, `analysis`, `scores`, `audio`, `complete`, `error`, `pong`
 
-Client messages include `config`, `start`, `audio`, `stop`, `reset`, and `ping`.
+---
 
-Server messages include `config_ack`, `status`, `transcript`, `filler_words`, `analysis`, `scores`, `audio`, `complete`, and `error`.
+## Known Gaps & Roadmap
+
+1. **Automated Tests:** Unit tests for analyzer parsing, integration tests for WebSocket events.
+2. **Observability:** Structured logging, latency metrics.
+3. **Resilience:** Retry/backoff and clear provider failover behavior.
+4. **Security:** Rate limiting and abuse protections.
+5. **UX Polish:** Richer conversation timeline, better transcript distinctions, session summaries.
 
 ## License
-
 MIT License
-
-## Credits
-
-- faster-whisper - speech recognition
-- Ollama - local LLM runtime
-- Piper - text-to-speech
-- FastAPI - backend web framework

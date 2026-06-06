@@ -38,8 +38,13 @@ class SupabaseAuthClient:
         if cls._client is not None:
             return cls._client
 
-        url = os.getenv("SUPABASE_URL", "").strip()
-        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_ANON_KEY", "").strip()
+        env = os.getenv("SUPABASE_ENV", "cloud").lower()
+        if env == "local":
+            url = os.getenv("SUPABASE_LOCAL_URL", "").strip()
+            key = os.getenv("SUPABASE_LOCAL_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_LOCAL_ANON_KEY", "").strip()
+        else:
+            url = os.getenv("SUPABASE_CLOUD_URL", "").strip() or os.getenv("SUPABASE_URL", "").strip()
+            key = os.getenv("SUPABASE_CLOUD_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_CLOUD_ANON_KEY", "").strip() or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_ANON_KEY", "").strip()
 
         if not url or not key or create_client is None:
             return None

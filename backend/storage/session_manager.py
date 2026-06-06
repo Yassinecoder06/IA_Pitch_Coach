@@ -290,11 +290,18 @@ class SessionManager:
         return True, ""
 
     def _call_rpc_via_rest(self, procedure: str, payload: Dict[str, Any], auth_token: Optional[str]) -> Optional[Any]:
-        supabase_url = (os.getenv("SUPABASE_URL", "") or "").strip().rstrip("/")
-        supabase_key = (
-            (os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()
-            or (os.getenv("SUPABASE_ANON_KEY", "") or "").strip()
-        )
+        env = os.getenv("SUPABASE_ENV", "cloud").lower()
+        if env == "local":
+            supabase_url = os.getenv("SUPABASE_LOCAL_URL", "").strip().rstrip("/")
+            supabase_key = os.getenv("SUPABASE_LOCAL_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_LOCAL_ANON_KEY", "").strip()
+        else:
+            supabase_url = (os.getenv("SUPABASE_CLOUD_URL", "").strip() or os.getenv("SUPABASE_URL", "").strip()).rstrip("/")
+            supabase_key = (
+                os.getenv("SUPABASE_CLOUD_SERVICE_ROLE_KEY", "").strip() or
+                os.getenv("SUPABASE_CLOUD_ANON_KEY", "").strip() or
+                os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or
+                os.getenv("SUPABASE_ANON_KEY", "").strip()
+            )
         if not supabase_url or not supabase_key or not auth_token:
             return None
 

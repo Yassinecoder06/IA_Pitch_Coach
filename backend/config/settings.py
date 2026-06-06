@@ -276,6 +276,14 @@ class Settings:
 
     def to_dict(self) -> Dict[str, Any]:
         """Export settings as dictionary."""
+        env = os.getenv("SUPABASE_ENV", "cloud").lower()
+        if env == "local":
+            sb_url = os.getenv("SUPABASE_LOCAL_URL", "").strip()
+            sb_anon = os.getenv("SUPABASE_LOCAL_ANON_KEY", "").strip()
+        else:
+            sb_url = os.getenv("SUPABASE_CLOUD_URL", "").strip() or os.getenv("SUPABASE_URL", "").strip()
+            sb_anon = os.getenv("SUPABASE_CLOUD_ANON_KEY", "").strip() or os.getenv("SUPABASE_ANON_KEY", "").strip()
+
         return {
             "providers": {
                 name: {
@@ -300,8 +308,8 @@ class Settings:
                 "port": self.server.port
             },
             "supabase": {
-                "url": os.getenv("SUPABASE_URL", ""),
-                "anon_key": os.getenv("SUPABASE_ANON_KEY", "")
+                "url": sb_url,
+                "anon_key": sb_anon
             }
         }
 
