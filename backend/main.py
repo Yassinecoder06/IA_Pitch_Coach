@@ -25,6 +25,7 @@ if str(ROOT_DIR) not in sys.path:
 from backend.config.settings import settings
 from backend.storage.database import db
 from backend.auth.owner import owner_service
+from backend.storage.provider_repository import migrate_legacy_encryption
 from backend.voice.stt import load_model as load_stt_model
 from backend.voice.tts import check_piper_available, preload_tts_model
 
@@ -48,6 +49,9 @@ async def lifespan(app: FastAPI):
     try:
         db.init_schema()
         print("[Database] Schema initialized successfully.")
+        migrated = migrate_legacy_encryption()
+        if migrated:
+            print(f"[Security] Re-encrypted {migrated} provider key(s) with the new secret key.")
     except Exception as e:
         print(f"[Database] Error initializing schema: {e}")
 
@@ -95,10 +99,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware for local frontend dev server (e.g. Vite on port 5173)
+# CORS only for the local Vite dev server; the production client is served same-origin.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -43,10 +43,11 @@ def test_auth_lifecycle():
     })
     assert setup_res.status_code == 200
     assert setup_res.json()["authenticated"] is True
-    token = setup_res.json()["token"]
+    assert "token" not in setup_res.json()  # only delivered as an HttpOnly cookie
+    assert SESSION_COOKIE in client.cookies
 
-    # 3. Create session with authenticated client
-    headers = {"Authorization": f"Bearer {token}"}
+    # 3. Create session with authenticated client (cookie is sent automatically)
+    headers = {}
     session_res = client.post("/api/sessions", headers=headers, json={
         "title": "Seed Round Pitch",
         "mode": "pitch_analysis"

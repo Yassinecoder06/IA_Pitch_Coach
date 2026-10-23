@@ -4,7 +4,8 @@ import { SessionSidebar } from './components/SessionSidebar';
 import { PitchWorkspace } from './components/PitchWorkspace';
 import { PitchInsights } from './components/PitchInsights';
 import { AiProvidersPanel } from './components/AiProvidersPanel';
-import { api } from './lib/api';
+import { api, AUTH_REQUIRED_EVENT } from './lib/api';
+import { PCM_SAMPLE_RATE } from './audio/pcmRecorder';
 import type { CoachingMode, Message, Scorecard, Session, SpeechMetrics } from './lib/types';
 
 function PitchCoachApp() {
@@ -151,11 +152,13 @@ function PitchCoachApp() {
   // 7. WebSocket Connection Management
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    const token = localStorage.getItem('pitch_coach_token');
-
-    const ws = new WebSocket(token ? `${wsUrl}?token=${token}` : wsUrl);
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
     wsRef.current = ws;
+
+    ws.onclose = event => {
+      // 4401: the server rejected the session cookie
+      if (event.code === 4401) window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
+    };
 
     ws.onopen = () => {
       if (activeSessionId) {
@@ -253,13 +256,12 @@ function PitchCoachApp() {
     }
   }
 
-  function sendAudioChunks(chunks: string[]) {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'start' }));
-      for (const chunk of chunks) {
-        wsRef.current.send(JSON.stringify({ type: 'audio', data: chunk }));
-      }
-      wsRef.current.send(JSON.stringify({ type: 'stop' }));
+  function sendAudio(frames: ArrayBuffer[]) {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'start', sample_rate: PCM_SAMPLE_RATE }));
+      for (const frame of frames) ws.send(frame); // binary PCM16 frames
+      ws.send(JSON.stringify({ type: 'stop' }));
     }
   }
 
@@ -292,7 +294,6 @@ function PitchCoachApp() {
 
   async function handleLockApp() {
     await api.logoutOwner().catch(console.error);
-    localStorage.removeItem('pitch_coach_token');
     window.location.reload();
   }
 
@@ -320,7 +321,7 @@ function PitchCoachApp() {
         isStreaming={isStreaming}
         streamingText={streamingText}
         onSendMessage={sendMessage}
-        onSendAudioChunks={sendAudioChunks}
+        onSendAudio={sendAudio}
         onEditLastTurn={handleEditLastTurn}
         onReadAloud={handleReadAloud}
         activeScorecard={scorecard}

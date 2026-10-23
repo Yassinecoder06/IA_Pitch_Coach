@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { DrillTimer } from './DrillTimer';
+import { startPcmRecorder, type PcmRecorder } from '../audio/pcmRecorder';
 import type { CoachingMode, Message, Scorecard, SpeechMetrics } from '../lib/types';
 
 interface PitchWorkspaceProps {
@@ -31,7 +32,7 @@ interface PitchWorkspaceProps {
   isStreaming: boolean;
   streamingText: string;
   onSendMessage: (text: string) => void;
-  onSendAudioChunks: (chunks: string[]) => void;
+  onSendAudio: (frames: ArrayBuffer[]) => void;
   onEditLastTurn: (newText: string) => void;
   onReadAloud: (text: string) => void;
   activeScorecard: Scorecard | null;
@@ -62,7 +63,7 @@ export function PitchWorkspace({
   isStreaming,
   streamingText,
   onSendMessage,
-  onSendAudioChunks,
+  onSendAudio,
   onEditLastTurn,
   onReadAloud,
 }: PitchWorkspaceProps) {
@@ -72,8 +73,7 @@ export function PitchWorkspace({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const recorderRef = useRef<PcmRecorder | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -98,42 +98,9 @@ export function PitchWorkspace({
   // Audio Recording & Waveform Visualizer
   async function startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const analyser = audioCtx.createAnalyser();
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
-      analyser.fftSize = 64;
-
-      audioContextRef.current = audioCtx;
-      analyserRef.current = analyser;
-
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-      mediaRecorderRef.current = mediaRecorder;
-
-      const audioBase64Chunks: string[] = [];
-      mediaRecorder.ondataavailable = async event => {
-        if (event.data.size > 0) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64data = (reader.result as string).split(',')[1];
-            if (base64data) audioBase64Chunks.push(base64data);
-          };
-          reader.readAsDataURL(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        stream.getTracks().forEach(track => track.stop());
-        if (audioCtx.state !== 'closed') audioCtx.close();
-        if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-        // Dispatch collected audio
-        setTimeout(() => {
-          onSendAudioChunks(audioBase64Chunks);
-        }, 200);
-      };
-
-      mediaRecorder.start(250); // 250ms chunks
+      const recorder = await startPcmRecorder();
+      recorderRef.current = recorder;
+      analyserRef.current = recorder.analyser;
       setIsRecording(true);
       drawWaveform();
     } catch (err) {
@@ -141,11 +108,14 @@ export function PitchWorkspace({
     }
   }
 
-  function stopRecording() {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
+  async function stopRecording() {
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
     setIsRecording(false);
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (!recorder) return;
+    const frames = await recorder.stop();
+    if (frames.length > 0) onSendAudio(frames);
   }
 
   function drawWaveform() {

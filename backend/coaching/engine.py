@@ -42,12 +42,17 @@ class CoachingEngine:
         ]
 
         if speech_metrics:
-            wpm = speech_metrics.get("words_per_minute", 0)
-            fillers = speech_metrics.get("filler_count", 0)
-            pauses = speech_metrics.get("pause_frequency", 0)
+            observations = []
+            if "words_per_minute" in speech_metrics:
+                observations.append(f"Pace: {speech_metrics['words_per_minute']:.1f} WPM (target: 130-160 WPM)")
+            if "filler_count" in speech_metrics:
+                observations.append(f"Filler words detected: {speech_metrics['filler_count']}")
+            if "pause_frequency" in speech_metrics:
+                observations.append(f"Pause frequency: {speech_metrics['pause_frequency']:.1f}/min")
+            if speech_metrics.get("source") == "text":
+                observations.append("This turn was typed, not spoken: do not comment on pace, pauses or voice")
             base_rules.append(
-                f"SPEECH METRICS FOR THIS TURN: Pace: {wpm:.1f} WPM (target: 130-160 WPM), "
-                f"Filler words detected: {fillers}, Pause frequency: {pauses:.1f}/min. "
+                "SPEECH METRICS FOR THIS TURN: " + ", ".join(observations) + ". "
                 "Incorporate these delivery observations directly into your coaching."
             )
 

@@ -46,14 +46,10 @@ export function OwnerGate({ children }: { children: ReactNode }) {
 
     setWorking(true);
     try {
-      let res;
       if (state === 'setup') {
-        res = await api.setupOwner(passphrase, setupCode);
+        await api.setupOwner(passphrase, setupCode);
       } else {
-        res = await api.loginOwner(passphrase);
-      }
-      if (res.token) {
-        localStorage.setItem('pitch_coach_token', res.token);
+        await api.loginOwner(passphrase);
       }
       setPassphrase('');
       setConfirm('');

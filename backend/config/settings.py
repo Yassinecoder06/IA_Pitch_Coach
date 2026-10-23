@@ -6,6 +6,8 @@ Supports .env and .env.local with sensible local-first defaults.
 from __future__ import annotations
 
 import os
+import secrets
+from functools import cached_property
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Optional
@@ -13,6 +15,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+
+# Value shipped in older .env.example files. Treated as "unset" so it is never used to sign or encrypt.
+LEGACY_DEFAULT_SECRET = "pitch-coach-local-session-secret-key-32chars"
 
 
 class Settings(BaseSettings):
@@ -26,11 +31,13 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
     debug: bool = Field(default=False, alias="DEBUG")
-    secret_key: str = Field(
-        default="pitch-coach-local-session-secret-key-32chars",
-        alias="SECRET_KEY"
+    secret_key_env: Optional[str] = Field(default=None, alias="SECRET_KEY")
+    data_dir: str = Field(default=str(ROOT_DIR / "data"), alias="DATA_DIR")
+    cors_origins: List[str] = Field(
+        default=["http://localhost:5173", "http://127.0.0.1:5173"],
+        alias="CORS_ORIGINS"
     )
-    cors_origins: List[str] = ["*"]
+    secure_cookies: bool = Field(default=False, alias="SECURE_COOKIES")
 
     # Database configuration (PostgreSQL in Docker, SQLite locally)
     database_url: str = Field(
@@ -65,6 +72,23 @@ class Settings(BaseSettings):
 
     # Session window
     session_context_window: int = Field(default=8, alias="SESSION_CONTEXT_WINDOW")
+
+    @cached_property
+    def secret_key(self) -> str:
+        """SECRET_KEY from the environment, or a random key persisted to <data_dir>/secret.key."""
+        if self.secret_key_env and self.secret_key_env != LEGACY_DEFAULT_SECRET:
+            return self.secret_key_env
+
+        key_file = Path(self.data_dir) / "secret.key"
+        if key_file.exists():
+            return key_file.read_text(encoding="utf-8").strip()
+
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+        key = secrets.token_urlsafe(48)
+        fd = os.open(str(key_file), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(key)
+        return key
 
     @property
     def stt(self) -> SimpleNamespace:

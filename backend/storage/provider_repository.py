@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from backend.config.settings import settings
+from backend.config.settings import settings, LEGACY_DEFAULT_SECRET
 from backend.storage.database import db, DEFAULT_LOCAL_USER_ID
 
 
@@ -31,8 +31,12 @@ def make_key_hint(key: Optional[str]) -> Optional[str]:
     return f"...{key[-4:]}"
 
 
+def _derive_key(secret: str) -> bytes:
+    return hashlib.sha256(f"provider_vault:{secret}".encode("utf-8")).digest()
+
+
 def _get_encryption_key() -> bytes:
-    return hashlib.sha256(f"provider_vault:{settings.secret_key}".encode("utf-8")).digest()
+    return _derive_key(settings.secret_key)
 
 
 def encrypt_secret(secret: Optional[str]) -> Optional[str]:
@@ -44,16 +48,40 @@ def encrypt_secret(secret: Optional[str]) -> Optional[str]:
     return base64.urlsafe_b64encode(nonce + ciphertext).decode("utf-8")
 
 
-def decrypt_secret(encrypted: Optional[str]) -> Optional[str]:
-    if not encrypted:
-        return None
+def _decrypt_with(key: bytes, encrypted: str) -> Optional[str]:
     try:
         raw = base64.urlsafe_b64decode(encrypted.encode("utf-8"))
         nonce, ciphertext = raw[:12], raw[12:]
-        aes = AESGCM(_get_encryption_key())
-        return aes.decrypt(nonce, ciphertext, None).decode("utf-8")
+        return AESGCM(key).decrypt(nonce, ciphertext, None).decode("utf-8")
     except Exception:
         return None
+
+
+def decrypt_secret(encrypted: Optional[str]) -> Optional[str]:
+    if not encrypted:
+        return None
+    return _decrypt_with(_get_encryption_key(), encrypted)
+
+
+def migrate_legacy_encryption() -> int:
+    """Re-encrypt provider keys that were stored under the old hardcoded default secret."""
+    legacy_key = _derive_key(LEGACY_DEFAULT_SECRET)
+    if legacy_key == _get_encryption_key():
+        return 0
+    rows = db.fetch_all("SELECT id, api_key_encrypted FROM ai_providers WHERE api_key_encrypted IS NOT NULL")
+    migrated = 0
+    for row in rows:
+        if decrypt_secret(row["api_key_encrypted"]) is not None:
+            continue
+        plain = _decrypt_with(legacy_key, row["api_key_encrypted"])
+        if plain is None:
+            continue
+        db.execute(
+            "UPDATE ai_providers SET api_key_encrypted = ? WHERE id = ?",
+            (encrypt_secret(plain), row["id"])
+        )
+        migrated += 1
+    return migrated
 
 
 class ProviderRepository:

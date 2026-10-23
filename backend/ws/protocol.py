@@ -10,18 +10,15 @@ from pydantic import BaseModel
 
 class WSClientMessage(BaseModel):
     type: Literal[
-        "auth",
         "config",
         "start",
-        "audio",
         "stop",
         "text",
         "edit_last_user",
         "read_aloud",
         "ping"
     ]
-    data: Optional[str] = None
-    token: Optional[str] = None
+    sample_rate: Optional[int] = None
     mode: Optional[str] = None
     model: Optional[str] = None
     session_id: Optional[str] = None
