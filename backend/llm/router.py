@@ -31,7 +31,10 @@ def create_provider_instance(
         return GeminiProvider(api_key=api_key)
     elif kind == "anthropic":
         return AnthropicProvider(api_key=api_key)
-    elif kind in ("ollama_local", "ollama_cloud"):
+    elif kind == "ollama_cloud":
+        url = base_url or "https://ollama.com"
+        return OllamaProvider(base_url=url, api_key=api_key)
+    elif kind == "ollama_local":
         return OllamaProvider(base_url=base_url or settings.ollama_endpoint)
     else:  # openai, openai_compatible, azure
         url = base_url or ("https://api.openai.com/v1" if kind == "openai" else settings.ollama_endpoint)
@@ -99,9 +102,9 @@ class LLMRouter:
             if fb not in candidates:
                 candidates.append(fb)
 
-        # Ensure at least default Ollama is in the list
-        default_ref = f"builtin:{settings.default_model or 'qwen3:0.6b'}"
-        if default_ref not in candidates:
+        # If no candidates specified, fallback to default local model
+        if not candidates:
+            default_ref = f"builtin:{settings.default_model or 'qwen3:0.6b'}"
             candidates.append(default_ref)
 
         last_error = None

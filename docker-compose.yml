@@ -10,9 +10,8 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://pitchcoach:pitchcoach_secret@db:5432/pitchcoach
-      - OLLAMA_ENDPOINT=http://ollama:11434
+      - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://host.docker.internal:11434}
       - DEFAULT_LLM=ollama
-      - DEFAULT_MODEL=qwen3:0.6b
       - WHISPER_MODEL_SIZE=tiny.en
       - WHISPER_DEVICE=cpu
       - WHISPER_COMPUTE_TYPE=int8
@@ -49,23 +48,11 @@ services:
     networks:
       - coach-net
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: pitch-coach-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    restart: unless-stopped
-    networks:
-      - coach-net
-
 volumes:
   postgres-data:
   whisper-models:
   piper-models:
   app-data:
-  ollama-data:
 
 networks:
   coach-net:

@@ -14,8 +14,9 @@ from backend.llm.providers.base import BaseLLMProvider
 
 
 class OllamaProvider(BaseLLMProvider):
-    def __init__(self, base_url: str = "http://localhost:11434"):
+    def __init__(self, base_url: str = "http://localhost:11434", api_key: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
 
     async def stream_chat(
         self,
@@ -41,11 +42,16 @@ class OllamaProvider(BaseLLMProvider):
             }
         }
 
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         async with httpx.AsyncClient(timeout=90.0) as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/api/chat",
-                json=body
+                json=body,
+                headers=headers
             ) as response:
                 if response.status_code != 200:
                     err_text = await response.aread()
@@ -72,9 +78,12 @@ class OllamaProvider(BaseLLMProvider):
             "stream": False,
             "options": {"num_predict": 10}
         }
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.post(f"{self.base_url}/api/chat", json=body)
+                res = await client.post(f"{self.base_url}/api/chat", json=body, headers=headers)
                 elapsed_ms = (time.perf_counter() - start) * 1000
                 if res.status_code == 200:
                     data = res.json()

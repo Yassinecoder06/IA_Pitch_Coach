@@ -50,6 +50,37 @@ class PreferencesRequest(BaseModel):
     stt_ref: Optional[str] = "builtin:whisper"
 
 
+BUILTIN_OPTIONS = [
+    {
+        "ref": "builtin:default",
+        "providerId": "builtin",
+        "providerName": "Host Ollama (Bridge)",
+        "kind": "ollama_local",
+        "model": "default",
+        "label": "Host Ollama (Auto-Bridge)",
+        "capabilities": ["chat"]
+    },
+    {
+        "ref": "builtin:whisper",
+        "providerId": "builtin",
+        "providerName": "Fast Whisper",
+        "kind": "builtin",
+        "model": "whisper",
+        "label": "Faster-Whisper (Local CPU/GPU)",
+        "capabilities": ["stt"]
+    },
+    {
+        "ref": "builtin:piper",
+        "providerId": "builtin",
+        "providerName": "Piper Neural Voice",
+        "kind": "builtin",
+        "model": "piper",
+        "label": "Piper TTS (Local)",
+        "capabilities": ["tts"]
+    }
+]
+
+
 def build_catalog(providers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     catalog = []
     for p in providers:
@@ -71,16 +102,7 @@ def build_catalog(providers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "capabilities": m.get("capabilities", ["chat"])
             })
 
-    # Built-in local fallback
-    catalog.append({
-        "ref": "builtin:qwen3:0.6b",
-        "providerId": "builtin",
-        "providerName": "Built-in (Ollama)",
-        "kind": "ollama_local",
-        "model": "qwen3:0.6b",
-        "label": "Qwen 3 0.6B (Fast Local)",
-        "capabilities": ["chat"]
-    })
+    catalog.extend(BUILTIN_OPTIONS)
     return catalog
 
 
@@ -89,6 +111,26 @@ async def get_providers_state(user_id: str = Depends(get_current_user_id)):
     """Returns the full AI providers state: configured providers, model catalog, and preferences."""
     providers = provider_repository.list_providers(user_id)
     preferences = provider_repository.get_preferences(user_id)
+
+    # If no providers configured yet, check if local Ollama host bridge is active
+    if not providers:
+        local_models = await discover_models("ollama_local")
+        if local_models:
+            p = provider_repository.create_provider(
+                kind="ollama_local",
+                name="Local Ollama (Host)",
+                user_id=user_id
+            )
+            provider_repository.save_models(p["id"], [m.model_dump() for m in local_models], None, user_id)
+            providers = provider_repository.list_providers(user_id)
+            if not preferences.get("chat_models"):
+                first_ref = make_model_ref(p["id"], local_models[0].id)
+                preferences = provider_repository.save_preferences(
+                    chat_models=[first_ref],
+                    fallback_models=[],
+                    user_id=user_id
+                )
+
     catalog = build_catalog(providers)
 
     kinds_info = [

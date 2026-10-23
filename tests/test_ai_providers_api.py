@@ -35,8 +35,7 @@ def test_ai_providers_lifecycle():
     })
     assert res.status_code == 200
     providers = res.json()["providers"]
-    assert len(providers) == 1
-    p = providers[0]
+    p = next(x for x in providers if x["name"] == "Groq Cloud")
     assert p["name"] == "Groq Cloud"
     assert p["has_key"] is True
     assert p["key_hint"] == "...7890"
@@ -44,7 +43,7 @@ def test_ai_providers_lifecycle():
     # 3. Save preferences
     pref_res = client.put("/api/ai/preferences", headers=headers, json={
         "chat_models": [f"{p['id']}:llama-3.3-70b-versatile"],
-        "fallback_models": ["builtin:qwen3:0.6b"]
+        "fallback_models": ["builtin:default"]
     })
     assert pref_res.status_code == 200
     saved_prefs = pref_res.json()
@@ -53,4 +52,4 @@ def test_ai_providers_lifecycle():
     # 4. Delete provider
     del_res = client.delete(f"/api/ai/providers/{p['id']}", headers=headers)
     assert del_res.status_code == 200
-    assert len(del_res.json()["providers"]) == 0
+    assert not any(x["id"] == p["id"] for x in del_res.json()["providers"])

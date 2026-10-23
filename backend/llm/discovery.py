@@ -5,10 +5,13 @@ Queries provider APIs to fetch available models.
 
 from __future__ import annotations
 
+import logging
 import httpx
 from typing import Any, Dict, List, Optional
+from backend.config.settings import settings
 from backend.llm.types import ModelInfo, ProviderKind
 
+logger = logging.getLogger(__name__)
 TIMEOUT = 10.0
 
 
@@ -21,26 +24,75 @@ async def discover_models(
     models: List[ModelInfo] = []
 
     if kind == "ollama_local":
-        url = (base_url or "http://localhost:11434").rstrip("/")
+        # Host bridge detection: Try provided base_url, settings.ollama_endpoint, or common host bridges
+        candidates = []
+        if base_url:
+            candidates.append(base_url.rstrip("/"))
+        else:
+            if settings.ollama_endpoint:
+                candidates.append(settings.ollama_endpoint.rstrip("/"))
+            candidates.append("http://localhost:11434")
+            candidates.append("http://host.docker.internal:11434")
+
+        # Deduplicate while preserving order
+        endpoints: List[str] = []
+        for ep in candidates:
+            if ep not in endpoints:
+                endpoints.append(ep)
+
+        for ep in endpoints:
+            try:
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    res = await client.get(f"{ep}/api/tags")
+                    if res.status_code == 200:
+                        data = res.json()
+                        for item in data.get("models", []):
+                            name = item.get("name") or item.get("model")
+                            if name:
+                                caps = ["embedding"] if "embed" in name.lower() else ["chat"]
+                                models.append(ModelInfo(id=name, label=name, capabilities=caps))
+                        if models:
+                            logger.info(f"Ollama bridge detected {len(models)} local models at {ep}")
+                            return models
+            except Exception as e:
+                logger.debug(f"Ollama local probe failed at {ep}: {e}")
+
+        # If Ollama service is not installed or offline on the host machine,
+        # return empty list as requested by user.
+        return []
+
+    if kind == "ollama_cloud":
+        url = (base_url or "https://ollama.com").rstrip("/")
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-                res = await client.get(f"{url}/api/tags")
+                res = await client.get(f"{url}/api/tags", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
                     for item in data.get("models", []):
-                        name = item.get("name")
+                        name = item.get("name") or item.get("model")
                         if name:
-                            models.append(ModelInfo(id=name, label=name, capabilities=["chat"]))
+                            caps = ["embedding"] if "embed" in name.lower() else ["chat"]
+                            models.append(ModelInfo(id=name, label=name, capabilities=caps))
+                    if models:
+                        return models
         except Exception as e:
-            # Fallback local models if Ollama offline
-            models = [
-                ModelInfo(id="qwen3:0.6b", label="Qwen 3 0.6B (Fast Local)", capabilities=["chat"]),
-                ModelInfo(id="llama3.2:3b", label="Llama 3.2 3B", capabilities=["chat"]),
+            logger.warning(f"Ollama Cloud discovery error at {url}: {e}")
+
+        # Standard curated Ollama Cloud models if tag endpoint returned empty but key is set
+        if api_key:
+            return [
+                ModelInfo(id="llama3.3:70b", label="Llama 3.3 70B (Ollama Cloud)", capabilities=["chat"]),
+                ModelInfo(id="qwen2.5:72b", label="Qwen 2.5 72B (Ollama Cloud)", capabilities=["chat"]),
+                ModelInfo(id="deepseek-r1:70b", label="DeepSeek-R1 70B (Ollama Cloud)", capabilities=["chat"]),
+                ModelInfo(id="mistral-large:latest", label="Mistral Large (Ollama Cloud)", capabilities=["chat"]),
             ]
-        return models
+        return []
 
     if kind == "gemini":
-        # Known standard Gemini models
         return [
             ModelInfo(id="gemini-2.5-flash", label="Gemini 2.5 Flash (Fast & Accurate)", capabilities=["chat"]),
             ModelInfo(id="gemini-2.5-pro", label="Gemini 2.5 Pro (Deep Reasoning)", capabilities=["chat"]),
@@ -55,7 +107,7 @@ async def discover_models(
             ModelInfo(id="claude-3-5-haiku-latest", label="Claude 3.5 Haiku (Ultra Fast)", capabilities=["chat"]),
         ]
 
-    if kind in ("openai", "openai_compatible", "ollama_cloud"):
+    if kind in ("openai", "openai_compatible"):
         url = (base_url or "https://api.openai.com/v1").rstrip("/")
         headers = {}
         if api_key:
