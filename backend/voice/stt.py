@@ -10,9 +10,10 @@ import importlib.util
 import os
 import sysconfig
 import tempfile
-from typing import Optional, Tuple, List
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 try:
     from faster_whisper import WhisperModel
@@ -27,6 +28,15 @@ class TranscriptionResult:
     confidence: float
     language: str
     segments: List[dict]
+    # Per-word timings: {"w": str, "start": s, "end": s, "prob": 0-1}
+    words: List[dict] = field(default_factory=list)
+    duration: float = 0.0
+
+
+# Whisper normally "cleans up" disfluencies. Priming it with a verbatim-style prompt keeps
+# fillers like "um" and "uh" in the transcript so they can be counted.
+VERBATIM_PROMPT = "Umm, so, uh, let me think, like, hmm... Okay, here's, um, what I'm, like, thinking."
+_transcribe_lock = threading.Lock()
 
 
 class STTEngine:
@@ -193,7 +203,8 @@ class STTEngine:
     def transcribe(
         self,
         audio_data: bytes,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        verbatim: bool = True
     ) -> TranscriptionResult:
         """
         Transcribe audio data to text.
@@ -220,23 +231,38 @@ class STTEngine:
             tmp_path = tmp_file.name
 
         try:
-            segments, info = STTEngine._model.transcribe(
-                tmp_path,
-                beam_size=5,
-                language=language or self.language,
-                vad_filter=True,
-                vad_parameters=dict(
-                    min_silence_duration_ms=500,
-                    speech_pad_ms=200
+            with _transcribe_lock:  # one transcription at a time on the shared model
+                segments, info = STTEngine._model.transcribe(
+                    tmp_path,
+                    beam_size=5,
+                    language=language or self.language,
+                    word_timestamps=True,
+                    initial_prompt=VERBATIM_PROMPT if verbatim else None,
+                    condition_on_previous_text=False,
+                    vad_filter=True,
+                    vad_parameters=dict(
+                        min_silence_duration_ms=500,
+                        speech_pad_ms=200
+                    )
                 )
-            )
+                segments = list(segments)  # decoding is lazy; run it while holding the lock
 
             text_parts = []
             segment_data = []
+            words: List[dict] = []
             total_probability = 0.0
             segment_count = 0
 
             for segment in segments:
+                for w in segment.words or []:
+                    token = w.word.strip()
+                    if token:
+                        words.append({
+                            "w": token,
+                            "start": round(float(w.start), 3),
+                            "end": round(float(w.end), 3),
+                            "prob": round(float(w.probability), 3),
+                        })
                 text_parts.append(segment.text.strip())
                 segment_data.append({
                     "start": segment.start,
@@ -259,7 +285,9 @@ class STTEngine:
                 text=full_text,
                 confidence=avg_confidence,
                 language=info.language,
-                segments=segment_data
+                segments=segment_data,
+                words=words,
+                duration=float(getattr(info, "duration", 0.0) or 0.0),
             )
 
         finally:
@@ -307,4 +335,10 @@ async def async_transcribe_audio(audio_data: bytes, sample_rate: int = 16000) ->
     """Asynchronously transcribe audio off the event loop thread."""
     import asyncio
     return await asyncio.to_thread(transcribe_audio, audio_data, sample_rate)
+
+
+async def async_transcribe_detailed(audio_data: bytes, verbatim: bool = True) -> TranscriptionResult:
+    """Full transcription result (segments and word timings) off the event loop thread."""
+    import asyncio
+    return await asyncio.to_thread(get_engine().transcribe, audio_data, None, verbatim)
 

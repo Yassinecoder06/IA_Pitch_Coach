@@ -5,9 +5,8 @@ Lightweight detection of filler words in speech transcripts.
 """
 
 import re
-from typing import Dict, List
 from dataclasses import dataclass
-
+from typing import Dict, List
 
 # Default filler words to detect
 FILLER_WORDS = [

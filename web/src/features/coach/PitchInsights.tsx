@@ -3,14 +3,11 @@ import {
   CheckCircle2,
   XCircle,
   Sparkles,
-  Gauge,
-  TrendingUp,
-  AlertCircle,
   Lightbulb,
   Award,
 } from 'lucide-react';
-import { ScoreRadar } from './ScoreRadar';
-import type { Scorecard, SpeechMetrics } from '../lib/types';
+import { ScoreRadar } from '@/components/ui/ScoreRadar';
+import type { Scorecard, SpeechMetrics } from '@/lib/types';
 
 interface PitchInsightsProps {
   scorecard: Scorecard | null;
@@ -32,7 +29,8 @@ export function PitchInsights({ scorecard, speechMetrics }: PitchInsightsProps) 
     );
   }
 
-  const overall = scorecard?.overall ?? 75;
+  // No scorecard yet means no score: never show a placeholder number.
+  const overall = scorecard ? Math.round(scorecard.overall) : null;
   const checklist = scorecard?.checklist || {
     hook: false,
     problem: false,
@@ -64,12 +62,18 @@ export function PitchInsights({ scorecard, speechMetrics }: PitchInsightsProps) 
           <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             Pitch Quality Score
           </span>
-          <h2 className="text-2xl font-black text-white mt-0.5">
-            {overall}
+          <h2 className="text-2xl font-black text-white mt-0.5" data-testid="overall-score">
+            {overall ?? '--'}
             <span className="text-sm font-normal text-neutral-400">/100</span>
           </h2>
           <span className="text-xs text-purple-300">
-            {overall >= 85 ? 'Investor Ready 🚀' : overall >= 70 ? 'Solid Foundation 👍' : 'Needs Practice 💪'}
+            {overall === null
+              ? 'Pitch to get scored'
+              : overall >= 85
+              ? 'Investor Ready 🚀'
+              : overall >= 70
+              ? 'Solid Foundation 👍'
+              : 'Needs Practice 💪'}
           </span>
         </div>
 
@@ -85,7 +89,7 @@ export function PitchInsights({ scorecard, speechMetrics }: PitchInsightsProps) 
             />
             <path
               className="text-purple-500 transition-all duration-1000 ease-out"
-              strokeDasharray={`${overall}, 100`}
+              strokeDasharray={`${overall ?? 0}, 100`}
               strokeLinecap="round"
               strokeWidth="3.5"
               stroke="currentColor"
@@ -93,7 +97,7 @@ export function PitchInsights({ scorecard, speechMetrics }: PitchInsightsProps) 
               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
             />
           </svg>
-          <span className="absolute text-xs font-bold text-white">{overall}%</span>
+          <span className="absolute text-xs font-bold text-white">{overall === null ? '--' : `${overall}%`}</span>
         </div>
       </div>
 

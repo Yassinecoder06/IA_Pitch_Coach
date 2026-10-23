@@ -5,12 +5,13 @@ System health and modes discovery router.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+
 from fastapi import APIRouter
 
-from backend.config.settings import settings
 from backend.coaching.modes import get_mode_catalog
-from backend.voice.tts import check_piper_available
+from backend.config.settings import settings
 from backend.voice.stt import get_engine as get_stt_engine
+from backend.voice.tts import check_piper_available
 
 router = APIRouter(tags=["system"])
 

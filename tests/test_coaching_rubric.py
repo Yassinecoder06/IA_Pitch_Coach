@@ -1,4 +1,3 @@
-import pytest
 from backend.coaching.rubric import parse_scorecard_from_text
 
 

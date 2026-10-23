@@ -5,20 +5,16 @@ AI Providers and model preferences management router adapted from Muse.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.api.deps import get_current_user_id
-from backend.storage.provider_repository import provider_repository
-from backend.llm.types import (
-    PROVIDER_KINDS,
-    KIND_LABELS,
-    NEEDS_KEY,
-    ProviderKind,
-    make_model_ref
-)
+from backend.api.deps import get_auth
+from backend.auth.owner import AuthContext
 from backend.llm.discovery import discover_models
 from backend.llm.router import llm_router
+from backend.llm.types import KIND_LABELS, NEEDS_KEY, PROVIDER_KINDS, ProviderKind, make_model_ref
+from backend.storage.provider_repository import AI_TASKS, provider_repository
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -45,9 +41,8 @@ class TestModelRequest(BaseModel):
 class PreferencesRequest(BaseModel):
     chat_models: List[str] = Field(default_factory=list)
     fallback_models: List[str] = Field(default_factory=list)
-    tts_ref: Optional[str] = "builtin:piper"
-    tts_voice: Optional[str] = "en_US-lessac-medium"
-    stt_ref: Optional[str] = "builtin:whisper"
+    task_models: Optional[Dict[str, str]] = None
+    tts_voice: Optional[str] = None
 
 
 BUILTIN_OPTIONS = [
@@ -107,29 +102,25 @@ def build_catalog(providers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 @router.get("/providers")
-async def get_providers_state(user_id: str = Depends(get_current_user_id)):
+async def get_providers_state(ctx: AuthContext = Depends(get_auth)):
     """Returns the full AI providers state: configured providers, model catalog, and preferences."""
-    providers = provider_repository.list_providers(user_id)
-    preferences = provider_repository.get_preferences(user_id)
+    return await _providers_state()
+
+
+async def _providers_state() -> Dict[str, Any]:
+    providers = await provider_repository.list_providers()
+    preferences = await provider_repository.get_preferences()
 
     # If no providers configured yet, check if local Ollama host bridge is active
     if not providers:
         local_models = await discover_models("ollama_local")
         if local_models:
-            p = provider_repository.create_provider(
-                kind="ollama_local",
-                name="Local Ollama (Host)",
-                user_id=user_id
-            )
-            provider_repository.save_models(p["id"], [m.model_dump() for m in local_models], None, user_id)
-            providers = provider_repository.list_providers(user_id)
+            p = await provider_repository.create_provider(kind="ollama_local", name="Local Ollama (Host)")
+            await provider_repository.save_models(p["id"], [m.model_dump() for m in local_models], None)
+            providers = await provider_repository.list_providers()
             if not preferences.get("chat_models"):
                 first_ref = make_model_ref(p["id"], local_models[0].id)
-                preferences = provider_repository.save_preferences(
-                    chat_models=[first_ref],
-                    fallback_models=[],
-                    user_id=user_id
-                )
+                preferences = await provider_repository.save_preferences(chat_models=[first_ref], fallback_models=[])
 
     catalog = build_catalog(providers)
 
@@ -147,20 +138,20 @@ async def get_providers_state(user_id: str = Depends(get_current_user_id)):
         "providers": providers,
         "preferences": preferences,
         "catalog": catalog,
-        "kinds": kinds_info
+        "kinds": kinds_info,
+        "tasks": list(AI_TASKS),
     }
 
 
 @router.post("/providers")
-async def add_provider(payload: CreateProviderRequest, user_id: str = Depends(get_current_user_id)):
+async def add_provider(payload: CreateProviderRequest, ctx: AuthContext = Depends(get_auth)):
     """Add a new AI provider, securely storing the API key."""
     name = payload.name.strip() if payload.name else KIND_LABELS.get(payload.kind, payload.kind)
-    provider = provider_repository.create_provider(
+    provider = await provider_repository.create_provider(
         kind=payload.kind,
         name=name,
         base_url=payload.baseUrl.strip() if payload.baseUrl else None,
         api_key=payload.apiKey.strip() if payload.apiKey else None,
-        user_id=user_id
     )
 
     # Immediately attempt model discovery
@@ -170,44 +161,43 @@ async def add_provider(payload: CreateProviderRequest, user_id: str = Depends(ge
             base_url=provider.get("base_url"),
             api_key=payload.apiKey.strip() if payload.apiKey else None
         )
-        provider_repository.save_models(provider["id"], [m.model_dump() for m in discovered], None, user_id)
+        await provider_repository.save_models(provider["id"], [m.model_dump() for m in discovered], None)
     except Exception as e:
-        provider_repository.save_models(provider["id"], [], str(e), user_id)
+        await provider_repository.save_models(provider["id"], [], str(e))
 
-    return await get_providers_state(user_id)
+    return await _providers_state()
 
 
 @router.patch("/providers/{provider_id}")
 async def update_provider(
     provider_id: str,
     payload: UpdateProviderRequest,
-    user_id: str = Depends(get_current_user_id)
+    ctx: AuthContext = Depends(get_auth)
 ):
     """Update provider settings or replace API key."""
-    updated = provider_repository.update_provider(
+    updated = await provider_repository.update_provider(
         provider_id=provider_id,
         name=payload.name,
         base_url=payload.baseUrl,
         api_key=payload.apiKey,
         enabled=payload.enabled,
-        user_id=user_id
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Provider not found")
-    return await get_providers_state(user_id)
+    return await _providers_state()
 
 
 @router.delete("/providers/{provider_id}")
-async def delete_provider(provider_id: str, user_id: str = Depends(get_current_user_id)):
+async def delete_provider(provider_id: str, ctx: AuthContext = Depends(get_auth)):
     """Delete a configured provider."""
-    provider_repository.delete_provider(provider_id, user_id)
-    return await get_providers_state(user_id)
+    await provider_repository.delete_provider(provider_id)
+    return await _providers_state()
 
 
 @router.post("/providers/{provider_id}/fetch-models")
-async def fetch_models(provider_id: str, user_id: str = Depends(get_current_user_id)):
+async def fetch_models(provider_id: str, ctx: AuthContext = Depends(get_auth)):
     """Query the provider to refresh available models."""
-    provider = provider_repository.get_provider(provider_id, user_id)
+    provider = await provider_repository.get_provider(provider_id)
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
 
@@ -217,18 +207,18 @@ async def fetch_models(provider_id: str, user_id: str = Depends(get_current_user
             base_url=provider.get("base_url"),
             api_key=provider.get("api_key")
         )
-        provider_repository.save_models(provider_id, [m.model_dump() for m in discovered], None, user_id)
+        await provider_repository.save_models(provider_id, [m.model_dump() for m in discovered], None)
     except Exception as e:
-        provider_repository.save_models(provider_id, [], str(e), user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch models: {e}")
+        await provider_repository.save_models(provider_id, [], str(e))
+        raise HTTPException(status_code=502, detail=f"Failed to fetch models: {e}") from e
 
-    return await get_providers_state(user_id)
+    return await _providers_state()
 
 
 @router.post("/test")
-async def test_model(payload: TestModelRequest, user_id: str = Depends(get_current_user_id)):
+async def test_model(payload: TestModelRequest, ctx: AuthContext = Depends(get_auth)):
     """Test model connectivity and measure response time."""
-    ok, text, elapsed_ms = await llm_router.test_model(payload.ref, user_id)
+    ok, text, elapsed_ms = await llm_router.test_model(payload.ref)
     return {
         "ok": ok,
         "detail": text if ok else None,
@@ -238,18 +228,18 @@ async def test_model(payload: TestModelRequest, user_id: str = Depends(get_curre
 
 
 @router.get("/preferences")
-async def get_preferences(user_id: str = Depends(get_current_user_id)):
-    return provider_repository.get_preferences(user_id)
+async def get_preferences(ctx: AuthContext = Depends(get_auth)):
+    return await provider_repository.get_preferences()
 
 
 @router.put("/preferences")
-async def save_preferences(payload: PreferencesRequest, user_id: str = Depends(get_current_user_id)):
-    saved = provider_repository.save_preferences(
+async def save_preferences(payload: PreferencesRequest, ctx: AuthContext = Depends(get_auth)):
+    unknown = set(payload.task_models or {}) - set(AI_TASKS)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown task(s): {', '.join(sorted(unknown))}")
+    return await provider_repository.save_preferences(
         chat_models=payload.chat_models,
         fallback_models=payload.fallback_models,
-        tts_ref=payload.tts_ref,
+        task_models=payload.task_models,
         tts_voice=payload.tts_voice,
-        stt_ref=payload.stt_ref,
-        user_id=user_id
     )
-    return saved

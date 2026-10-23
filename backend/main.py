@@ -7,34 +7,34 @@ streaming speech-to-text, real-time coaching evaluation, and text-to-speech.
 
 from __future__ import annotations
 
-import os
 import sys
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # Ensure backend package is in python path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from backend.config.settings import settings
-from backend.storage.database import db
-from backend.auth.owner import owner_service
-from backend.storage.provider_repository import migrate_legacy_encryption
-from backend.voice.stt import load_model as load_stt_model
-from backend.voice.tts import check_piper_available, preload_tts_model
+from backend.api.routers.ai import router as ai_router
 
 # Import API routers
 from backend.api.routers.auth import router as auth_router
-from backend.api.routers.ai import router as ai_router
+from backend.api.routers.profiles import router as profiles_router
 from backend.api.routers.sessions import router as sessions_router
-from backend.api.routers.tts import router as tts_router
 from backend.api.routers.system import router as system_router
+from backend.api.routers.tts import router as tts_router
+from backend.auth.owner import owner_service
+from backend.config.settings import settings
+from backend.db import database
+from backend.storage.provider_repository import migrate_legacy_encryption
+from backend.voice.stt import load_model as load_stt_model
+from backend.voice.tts import preload_tts_model
 from backend.ws.coach import handle_websocket_connection
 
 
@@ -45,18 +45,16 @@ async def lifespan(app: FastAPI):
     print("AI Pitch Coach (SOTA Edition) - Starting Up")
     print("=" * 65)
 
-    # 1. Initialize Database Schema
-    try:
-        db.init_schema()
-        print("[Database] Schema initialized successfully.")
-        migrated = migrate_legacy_encryption()
-        if migrated:
-            print(f"[Security] Re-encrypted {migrated} provider key(s) with the new secret key.")
-    except Exception as e:
-        print(f"[Database] Error initializing schema: {e}")
+    # 1. Apply database migrations. A broken schema must stop startup, not limp along.
+    await database.upgrade()
+    print("[Database] Schema is up to date.")
+    migrated = await migrate_legacy_encryption()
+    if migrated:
+        print(f"[Security] Re-encrypted {migrated} provider key(s) with the new secret key.")
 
     # 2. Check Owner Configuration (from Muse)
-    if not owner_service.is_configured():
+    owner_service.reset_cache()
+    if not await owner_service.is_configured():
         code = owner_service.get_or_create_setup_code()
         print("\n" + "#" * 65)
         print("  FIRST-RUN SETUP CODE (CLAIM YOUR LOCAL PITCH COACH):")
@@ -110,6 +108,7 @@ app.add_middleware(
 
 # Register REST Routers
 app.include_router(auth_router)
+app.include_router(profiles_router)
 app.include_router(ai_router)
 app.include_router(sessions_router)
 app.include_router(tts_router)

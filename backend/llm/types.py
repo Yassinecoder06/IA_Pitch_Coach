@@ -4,9 +4,9 @@ Type definitions for LLM providers and model discovery.
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from typing import Dict, List, Literal, Optional
+
+from pydantic import BaseModel
 
 ProviderKind = Literal[
     "openai",

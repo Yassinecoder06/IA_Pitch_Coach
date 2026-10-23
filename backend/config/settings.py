@@ -11,8 +11,9 @@ from functools import cached_property
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 

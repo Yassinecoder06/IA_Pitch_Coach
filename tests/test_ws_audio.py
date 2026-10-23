@@ -2,21 +2,9 @@ import io
 import wave
 
 import numpy as np
-import pytest
-from fastapi.testclient import TestClient
 
-from backend.main import app
+from backend.voice.stt import TranscriptionResult
 from backend.ws import coach
-from backend.storage.database import db
-from backend.auth.owner import owner_service
-
-
-@pytest.fixture(autouse=True)
-def setup_test_db(tmp_path):
-    db.sqlite_file = tmp_path / "test_ws_audio.db"
-    db.is_postgres = False
-    db.init_schema()
-    owner_service._setup_code = None
 
 
 def _pcm16_tone(seconds: float, rate: int = 16000) -> bytes:
@@ -40,18 +28,19 @@ def test_combine_audio_chunks_rejects_tiny_input():
     assert coach.combine_audio_chunks([b"\x00" * 100]) is None
 
 
-def test_binary_pcm_frames_reach_stt_as_wav(monkeypatch):
+def _empty_result() -> TranscriptionResult:
+    return TranscriptionResult(text="", confidence=0.0, language="en", segments=[])
+
+
+def test_binary_pcm_frames_reach_stt_as_wav(monkeypatch, owner_client):
     captured = {}
 
-    async def fake_transcribe(audio: bytes, sample_rate: int = 16000):
+    async def fake_transcribe(audio: bytes, verbatim: bool = True):
         captured["wav"] = audio
-        return "", 0.0  # empty transcript ends the turn before the LLM is called
+        return _empty_result()  # empty transcript ends the turn before the LLM is called
 
-    monkeypatch.setattr(coach, "async_transcribe_audio", fake_transcribe)
-
-    client = TestClient(app)
-    code = owner_service.get_or_create_setup_code()
-    client.post("/api/auth/owner/setup", json={"passphrase": "CorrectHorse1", "setupCode": code})
+    monkeypatch.setattr(coach, "async_transcribe_detailed", fake_transcribe)
+    client = owner_client
 
     pcm = _pcm16_tone(2.0)
     with client.websocket_connect("/ws") as ws:
@@ -68,18 +57,16 @@ def test_binary_pcm_frames_reach_stt_as_wav(monkeypatch):
         assert wf.readframes(wf.getnframes()) == pcm
 
 
-def test_binary_frames_ignored_when_not_recording(monkeypatch):
+def test_binary_frames_ignored_when_not_recording(monkeypatch, owner_client):
     called = False
 
-    async def fake_transcribe(audio: bytes, sample_rate: int = 16000):
+    async def fake_transcribe(audio: bytes, verbatim: bool = True):
         nonlocal called
         called = True
-        return "", 0.0
+        return _empty_result()
 
-    monkeypatch.setattr(coach, "async_transcribe_audio", fake_transcribe)
-    client = TestClient(app)
-    code = owner_service.get_or_create_setup_code()
-    client.post("/api/auth/owner/setup", json={"passphrase": "CorrectHorse1", "setupCode": code})
+    monkeypatch.setattr(coach, "async_transcribe_detailed", fake_transcribe)
+    client = owner_client
 
     with client.websocket_connect("/ws") as ws:
         ws.send_bytes(_pcm16_tone(1.0))

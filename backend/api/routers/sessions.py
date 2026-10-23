@@ -4,11 +4,11 @@ Sessions and historical messages router.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.api.deps import get_current_user_id
+from backend.api.deps import get_profile_id
+from backend.coaching.modes import normalize_mode
 from backend.storage.session_repository import session_repository
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -28,21 +28,21 @@ class RenameSessionPayload(BaseModel):
 
 
 @router.get("")
-async def list_sessions(limit: int = 50, user_id: str = Depends(get_current_user_id)):
-    sessions = session_repository.list_sessions(user_id=user_id, limit=limit)
+async def list_sessions(limit: int = 50, profile_id: str = Depends(get_profile_id)):
+    sessions = await session_repository.list_sessions(profile_id, limit=limit)
     return {"sessions": sessions}
 
 
 @router.post("")
-async def create_session(payload: CreateSessionPayload, user_id: str = Depends(get_current_user_id)):
-    session = session_repository.create_session(title=payload.title, mode=payload.mode, user_id=user_id)
+async def create_session(payload: CreateSessionPayload, profile_id: str = Depends(get_profile_id)):
+    session = await session_repository.create_session(profile_id, title=payload.title, mode=normalize_mode(payload.mode))
     return session
 
 
 @router.get("/progress")
-async def get_overall_progress(user_id: str = Depends(get_current_user_id)):
+async def get_overall_progress(profile_id: str = Depends(get_profile_id)):
     """Returns chronological score progression across all sessions."""
-    progress = session_repository.get_progress(user_id=user_id)
+    progress = await session_repository.get_progress(profile_id)
     return {"progress": progress}
 
 
@@ -50,12 +50,12 @@ async def get_overall_progress(user_id: str = Depends(get_current_user_id)):
 async def get_session(
     session_id: str,
     message_limit: int = 100,
-    user_id: str = Depends(get_current_user_id)
+    profile_id: str = Depends(get_profile_id)
 ):
-    session = session_repository.get_session(session_id, user_id)
+    session = await session_repository.get_session(session_id, profile_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    messages = session_repository.get_recent_messages(session_id, user_id, limit=message_limit)
+    messages = await session_repository.get_recent_messages(session_id, profile_id, limit=message_limit)
     return {
         "session": session,
         "messages": messages
@@ -66,12 +66,10 @@ async def get_session(
 async def update_session_mode(
     session_id: str,
     payload: UpdateModePayload,
-    user_id: str = Depends(get_current_user_id)
+    profile_id: str = Depends(get_profile_id)
 ):
-    session = session_repository.get_session(session_id, user_id)
-    if not session:
+    if not await session_repository.update_mode(session_id, profile_id, normalize_mode(payload.mode)):
         raise HTTPException(status_code=404, detail="Session not found")
-    session_repository.update_mode(session_id, user_id, payload.mode)
     return {"ok": True}
 
 
@@ -79,25 +77,23 @@ async def update_session_mode(
 async def rename_session(
     session_id: str,
     payload: RenameSessionPayload,
-    user_id: str = Depends(get_current_user_id)
+    profile_id: str = Depends(get_profile_id)
 ):
-    session = session_repository.get_session(session_id, user_id)
-    if not session:
+    if not await session_repository.rename_session(session_id, profile_id, payload.title.strip() or "Untitled Session"):
         raise HTTPException(status_code=404, detail="Session not found")
-    session_repository.rename_session(session_id, user_id, payload.title.strip() or "Untitled Session")
     return {"ok": True}
 
 
 @router.delete("/{session_id}")
-async def delete_session(session_id: str, user_id: str = Depends(get_current_user_id)):
-    deleted = session_repository.delete_session(session_id, user_id)
+async def delete_session(session_id: str, profile_id: str = Depends(get_profile_id)):
+    deleted = await session_repository.delete_session(session_id, profile_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"ok": True}
 
 
 @router.delete("/{session_id}/turns/last")
-async def delete_last_turn(session_id: str, user_id: str = Depends(get_current_user_id)):
+async def delete_last_turn(session_id: str, profile_id: str = Depends(get_profile_id)):
     """Deletes the latest coach and user turn to allow editing and regenerating."""
-    deleted_count = session_repository.delete_last_turn(session_id, user_id)
+    deleted_count = await session_repository.delete_last_turn(session_id, profile_id)
     return {"deleted": deleted_count}

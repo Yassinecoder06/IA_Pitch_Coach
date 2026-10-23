@@ -46,8 +46,6 @@ export function DrillTimer({ onClose }: DrillTimerProps) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const progress = ((totalSeconds - remaining) / totalSeconds) * 100;
-
   return (
     <div className="glass-card flex items-center justify-between rounded-2xl p-3 border border-purple-500/20">
       <div className="flex items-center gap-3">

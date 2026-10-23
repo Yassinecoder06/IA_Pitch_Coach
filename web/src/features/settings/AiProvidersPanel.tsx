@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Server,
   Plus,
   RefreshCw,
   KeyRound,
@@ -11,19 +10,20 @@ import {
   ArrowUp,
   ArrowDown,
   Loader2,
-  Sparkles,
-  ExternalLink,
 } from 'lucide-react';
-import { api } from '../lib/api';
-import type { AiPreferences, AiProvidersState } from '../lib/types';
+import { api } from '@/lib/api';
+import type { AiPreferences, AiProvidersState, AiTask } from '@/lib/types';
+import { toast } from '@/stores/toast';
 
-export function AiProvidersPanel({
-  onClose,
-  onToast,
-}: {
-  onClose: () => void;
-  onToast: (msg: string) => void;
-}) {
+const TASK_INFO: Record<AiTask, { label: string; hint: string }> = {
+  chat: { label: 'Coaching chat', hint: 'Streaming feedback in the Coach workspace.' },
+  judge: { label: 'Scoring & analysis', hint: 'Structured scorecards and rehearsal reports.' },
+  deck_gen: { label: 'Deck generation', hint: 'Builds AI pitch decks and slide critiques.' },
+  qa: { label: 'Investor Q&A', hint: 'Plays the VC asking follow-up questions.' },
+};
+
+export function AiProvidersPanel() {
+  const onToast = (msg: string) => toast(msg);
   const [state, setState] = useState<AiProvidersState | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -125,21 +125,27 @@ export function AiProvidersPanel({
 
   if (!state || !prefs) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-        <div className="glass-panel w-full max-w-2xl rounded-2xl p-8 text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-purple-400" />
-          <p className="mt-2 text-sm text-neutral-400">Loading AI configuration...</p>
-        </div>
+      <div className="glass-panel w-full max-w-2xl rounded-2xl p-8 text-center">
+        {error ? (
+          <p className="text-sm text-rose-400">{error}</p>
+        ) : (
+          <>
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-purple-400" />
+            <p className="mt-2 text-sm text-neutral-400">Loading AI configuration...</p>
+          </>
+        )}
       </div>
     );
   }
+
+  const chatCatalog = state.catalog.filter(m => m.capabilities.includes('chat'));
 
   const primaryModel = prefs.chat_models[0] || 'builtin:qwen3:0.6b';
   const fallbacks = prefs.fallback_models;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 overflow-y-auto">
-      <div className="glass-panel my-8 w-full max-w-3xl rounded-3xl p-6 sm:p-8 shadow-2xl shadow-purple-950/40">
+    <div>
+      <div className="glass-panel w-full max-w-3xl rounded-3xl p-6 sm:p-8 shadow-2xl shadow-purple-950/40">
         <div className="flex items-center justify-between border-b border-white/10 pb-5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-600/20 text-purple-400">
@@ -152,12 +158,6 @@ export function AiProvidersPanel({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-white/10 p-2 text-neutral-400 hover:bg-white/5 hover:text-white"
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
         {error && (
@@ -326,7 +326,7 @@ export function AiProvidersPanel({
                   }}
                   className="rounded-xl border border-white/10 bg-neutral-900 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
                 >
-                  {state.catalog.map(m => (
+                  {chatCatalog.map(m => (
                     <option key={m.ref} value={m.ref}>
                       {m.providerName} · {m.label}
                     </option>
@@ -359,6 +359,36 @@ export function AiProvidersPanel({
                 )}
               </div>
             )}
+
+            {/* Per-task routing */}
+            <div className="glass-card rounded-2xl p-4">
+              <strong className="text-sm text-white block">Model per task</strong>
+              <span className="text-xs text-neutral-400">
+                Optional. A task without its own model uses the primary model, then the fallbacks.
+              </span>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {state.tasks.map(task => (
+                  <label key={task} className="flex flex-col gap-1 rounded-xl bg-neutral-900/60 px-3 py-2 text-xs">
+                    <span className="text-neutral-200">{TASK_INFO[task].label}</span>
+                    <span className="text-[11px] text-neutral-500">{TASK_INFO[task].hint}</span>
+                    <select
+                      value={prefs.task_models[task] || ''}
+                      onChange={e =>
+                        setPrefs({ ...prefs, task_models: { ...prefs.task_models, [task]: e.target.value || undefined } })
+                      }
+                      className="mt-1 rounded-lg border border-white/10 bg-neutral-900 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="">Use primary model</option>
+                      {chatCatalog.map(m => (
+                        <option key={m.ref} value={m.ref}>
+                          {m.providerName} · {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </div>
 
             {/* Fallback Cascades */}
             <div className="glass-card rounded-2xl p-4">
@@ -429,7 +459,7 @@ export function AiProvidersPanel({
                   className="w-full rounded-xl border border-dashed border-white/10 bg-transparent px-3 py-2 text-xs text-neutral-400 focus:outline-none"
                 >
                   <option value="">+ Add a fallback model...</option>
-                  {state.catalog.map(m => (
+                  {chatCatalog.map(m => (
                     <option key={m.ref} value={m.ref}>
                       {m.providerName} · {m.label}
                     </option>
@@ -440,13 +470,6 @@ export function AiProvidersPanel({
           </div>
 
           <div className="mt-6 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-white/5"
-            >
-              Close
-            </button>
             <button
               type="button"
               onClick={savePreferences}

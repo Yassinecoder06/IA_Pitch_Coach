@@ -1,6 +1,21 @@
+export interface Profile {
+  id: string;
+  name: string;
+  color: string;
+  has_pin: boolean;
+  created_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface OwnerStatus {
+  configured: boolean;
+  authenticated: boolean;
+  profile: Profile | null;
+}
+
 export interface Session {
   id: string;
-  user_id: string;
+  profile_id: string;
   title: string;
   current_mode: string;
   context_md?: string;
@@ -36,10 +51,17 @@ export interface Scorecard {
   rewrite?: string | null;
 }
 
+export interface TranscriptWord {
+  w: string;
+  start: number;
+  end: number;
+  prob: number;
+}
+
 export interface SpeechMetrics {
-  words_per_minute: number;
-  pause_frequency: number;
-  pause_duration: number;
+  words_per_minute?: number;
+  pause_frequency?: number;
+  pause_duration?: number;
   energy_variation?: number;
   rhythm_score?: number;
   filler_count?: number;
@@ -95,12 +117,13 @@ export interface CatalogItem {
   capabilities: string[];
 }
 
+export type AiTask = 'chat' | 'judge' | 'deck_gen' | 'qa';
+
 export interface AiPreferences {
   chat_models: string[];
   fallback_models: string[];
-  tts_ref: string;
+  task_models: Partial<Record<AiTask, string>>;
   tts_voice: string;
-  stt_ref: string;
 }
 
 export interface AiProvidersState {
@@ -113,4 +136,5 @@ export interface AiProvidersState {
     needsKey: boolean;
     needsBaseUrl: boolean;
   }[];
+  tasks: AiTask[];
 }

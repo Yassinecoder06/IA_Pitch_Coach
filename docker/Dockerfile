@@ -5,8 +5,8 @@
 # --- Stage 1: Build React Frontend ---
 FROM node:22-alpine AS web-builder
 WORKDIR /app/web
-COPY web/package.json ./
-RUN npm install
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
 COPY web/ ./
 RUN npm run build
 
@@ -62,3 +62,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# --- Optional: runtime with LibreOffice for PPTX upload (docker build --target slides) ---
+FROM runtime AS slides
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice-impress \
+    fonts-dejavu \
+    && rm -rf /var/lib/apt/lists/*

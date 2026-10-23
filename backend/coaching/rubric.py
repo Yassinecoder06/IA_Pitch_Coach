@@ -4,15 +4,16 @@
 
 from __future__ import annotations
 
-import re
 import json
+import re
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 
 class DimensionScore(BaseModel):
-    score: int = Field(ge=0, le=10)
-    feedback: str = ""
+    score: float = Field(ge=0, le=10, description="0-10")
+    feedback: str = Field(default="", description="One specific sentence that cites the speaker's words.")
 
 
 class StructureChecklist(BaseModel):
@@ -25,7 +26,9 @@ class StructureChecklist(BaseModel):
 
 
 class Scorecard(BaseModel):
-    overall: int = Field(ge=0, le=100)
+    """6-dimension pitch rubric. Produced by the judge model as structured output."""
+
+    overall: float = Field(ge=0, le=100, description="0-100 holistic score")
     clarity: DimensionScore
     structure: DimensionScore
     persuasion: DimensionScore
@@ -35,13 +38,13 @@ class Scorecard(BaseModel):
     checklist: StructureChecklist = Field(default_factory=StructureChecklist)
     strengths: List[str] = Field(default_factory=list)
     top_fixes: List[str] = Field(default_factory=list)
-    rewrite: Optional[str] = None
+    rewrite: Optional[str] = Field(default=None, description="Punchier rewrite of the weakest sentence.")
 
 
 def parse_scorecard_from_text(text: str) -> Optional[Dict[str, Any]]:
     """
-    Extract scorecard JSON or parse structured scores from model output.
-    Tolerates JSON wrapped in markdown ```json ... ``` or plain text.
+    Legacy fallback: extract scorecard JSON or parse "Clarity: 8/10" style scores from free text.
+    New code asks the judge model for a `Scorecard` via structured output instead.
     """
     if not text:
         return None
@@ -69,7 +72,6 @@ def parse_scorecard_from_text(text: str) -> Optional[Dict[str, Any]]:
         pass
 
     # Fallback regex extraction for legacy SCORES: Clarity: X/10 format
-    scores: Dict[str, Any] = {}
     clarity_m = re.search(r"Clarity:\s*(\d+)(?:/10)?", text, re.IGNORECASE)
     language_m = re.search(r"(?:Language|Persuasion):\s*(\d+)(?:/10)?", text, re.IGNORECASE)
     confidence_m = re.search(r"Confidence:\s*(\d+)(?:/10)?", text, re.IGNORECASE)
@@ -78,13 +80,13 @@ def parse_scorecard_from_text(text: str) -> Optional[Dict[str, Any]]:
     delivery_m = re.search(r"Delivery:\s*(\d+)(?:/10)?", text, re.IGNORECASE)
 
     c = int(clarity_m.group(1)) if clarity_m else 7
-    l = int(language_m.group(1)) if language_m else 7
+    lang = int(language_m.group(1)) if language_m else 7
     conf = int(confidence_m.group(1)) if confidence_m else 7
     r = int(relevance_m.group(1)) if relevance_m else 7
     s = int(structure_m.group(1)) if structure_m else 7
     d = int(delivery_m.group(1)) if delivery_m else 7
 
-    overall = int(round((c + l + conf + r + s + d) / 6.0 * 10))
+    overall = int(round((c + lang + conf + r + s + d) / 6.0 * 10))
 
     # Infer checklist from transcript/response
     lower = text.lower()
@@ -101,7 +103,7 @@ def parse_scorecard_from_text(text: str) -> Optional[Dict[str, Any]]:
         "overall": overall,
         "clarity": {"score": min(max(c, 0), 10), "feedback": ""},
         "structure": {"score": min(max(s, 0), 10), "feedback": ""},
-        "persuasion": {"score": min(max(l, 0), 10), "feedback": ""},
+        "persuasion": {"score": min(max(lang, 0), 10), "feedback": ""},
         "delivery": {"score": min(max(d, 0), 10), "feedback": ""},
         "confidence": {"score": min(max(conf, 0), 10), "feedback": ""},
         "relevance": {"score": min(max(r, 0), 10), "feedback": ""},

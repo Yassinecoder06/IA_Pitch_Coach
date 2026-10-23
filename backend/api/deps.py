@@ -1,52 +1,53 @@
 """
-FastAPI dependencies for authentication and authorization.
+FastAPI dependencies for authentication and profile scoping.
 """
 
 from __future__ import annotations
 
 from typing import Optional
-from fastapi import Request, HTTPException, Depends
 
-from backend.auth.owner import owner_service, SESSION_COOKIE
-from backend.storage.database import DEFAULT_LOCAL_USER_ID
+from fastapi import Depends, HTTPException, Request
+
+from backend.auth.owner import SESSION_COOKIE, AuthContext, owner_service
 
 
 def extract_token(request: Request) -> Optional[str]:
-    # Check cookie first
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         return token
-    # Check Authorization header
+    # Bearer tokens are accepted for scripted API clients.
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         return auth_header[7:].strip()
     return None
 
 
-def get_current_user_id(request: Request) -> str:
+async def get_auth(request: Request) -> AuthContext:
     """
-    Dependency that enforces owner authentication.
-    If the app is unconfigured, raises 401 with code 'unconfigured'.
-    If the token is missing or invalid, raises 401 with code 'auth_required'.
+    Requires the install to be unlocked by the owner.
+    401 codes: 'unconfigured' (no passphrase yet) or 'auth_required' (locked / bad token).
     """
-    if not owner_service.is_configured():
+    if not await owner_service.is_configured():
         raise HTTPException(
             status_code=401,
             detail={"error": "Owner passphrase not configured yet.", "code": "unconfigured"}
         )
-
-    token = extract_token(request)
-    user_id = owner_service.verify_session_token(token)
-    if not user_id:
+    ctx = await owner_service.verify_session_token(extract_token(request))
+    if ctx is None:
         raise HTTPException(
             status_code=401,
             detail={"error": "Unlock Pitch Coach to continue.", "code": "auth_required"}
         )
-    return user_id
+    return ctx
 
 
-def get_optional_user_id(request: Request) -> Optional[str]:
-    token = extract_token(request)
-    if not token:
-        return None
-    return owner_service.verify_session_token(token)
+async def get_profile_id(ctx: AuthContext = Depends(get_auth)) -> str:
+    """Requires an active profile. 401 code 'profile_required' means: show the profile picker."""
+    from backend.storage.profile_repository import profile_repository
+
+    if not ctx.profile_id or not await profile_repository.get(ctx.profile_id):
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "Choose a profile to continue.", "code": "profile_required"}
+        )
+    return ctx.profile_id

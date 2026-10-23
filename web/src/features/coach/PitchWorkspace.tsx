@@ -6,22 +6,12 @@ import {
   Volume2,
   Sparkles,
   Edit3,
-  RotateCcw,
-  Target,
-  Briefcase,
-  Activity,
-  ShieldAlert,
-  Smile,
-  Globe,
-  MessagesSquare,
-  ChevronDown,
   Timer as TimerIcon,
   Loader2,
 } from 'lucide-react';
-import { api } from '../lib/api';
 import { DrillTimer } from './DrillTimer';
-import { startPcmRecorder, type PcmRecorder } from '../audio/pcmRecorder';
-import type { CoachingMode, Message, Scorecard, SpeechMetrics } from '../lib/types';
+import { startPcmRecorder, type PcmRecorder } from '@/audio/pcmRecorder';
+import type { CoachingMode, Message, Scorecard, SpeechMetrics } from '@/lib/types';
 
 interface PitchWorkspaceProps {
   modes: CoachingMode[];
@@ -30,6 +20,7 @@ interface PitchWorkspaceProps {
   activeSessionTitle: string;
   messages: Message[];
   isStreaming: boolean;
+  statusText?: string | null;
   streamingText: string;
   onSendMessage: (text: string) => void;
   onSendAudio: (frames: ArrayBuffer[]) => void;
@@ -61,6 +52,7 @@ export function PitchWorkspace({
   activeSessionTitle,
   messages,
   isStreaming,
+  statusText,
   streamingText,
   onSendMessage,
   onSendAudio,
@@ -276,14 +268,16 @@ export function PitchWorkspace({
         })}
 
         {/* Live Streaming Coach Turn */}
-        {isStreaming && (
-          <div className="flex flex-col items-start max-w-3xl mx-auto">
+        {(isStreaming || statusText) && (
+          <div className="flex flex-col items-start max-w-3xl mx-auto" aria-live="polite">
             <div className="flex items-center gap-1.5 mb-1 text-[11px] text-purple-400 px-1">
-              <Loader2 className="h-3 w-3 animate-spin" /> AI Coach is speaking...
+              <Loader2 className="h-3 w-3 animate-spin" /> {statusText || 'AI Coach is speaking...'}
             </div>
-            <div className="glass-panel rounded-2xl px-4 py-3.5 text-sm leading-relaxed text-neutral-200 border border-purple-500/30 whitespace-pre-wrap max-w-2xl">
-              {streamingText.replace(/```json[\s\S]*?```/g, '')}
-            </div>
+            {streamingText && (
+              <div className="glass-panel rounded-2xl px-4 py-3.5 text-sm leading-relaxed text-neutral-200 border border-purple-500/30 whitespace-pre-wrap max-w-2xl">
+                {streamingText}
+              </div>
+            )}
           </div>
         )}
 
@@ -325,6 +319,7 @@ export function PitchWorkspace({
                   : 'bg-purple-600 text-white shadow-purple-600/25 hover:bg-purple-500 hover:scale-105'
               }`}
               title={isRecording ? 'Stop recording' : 'Start microphone'}
+              aria-label={isRecording ? 'Stop recording' : 'Start recording'}
             >
               {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
             </button>
@@ -342,12 +337,14 @@ export function PitchWorkspace({
                   }
                 }}
                 disabled={isRecording}
+                aria-label="Pitch text"
                 className="w-full bg-transparent text-sm text-white placeholder:text-neutral-600 focus:outline-none"
               />
             </div>
 
             <button
               onClick={handleSend}
+              aria-label="Send"
               disabled={!inputText.trim() || isRecording}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-white hover:bg-purple-600 hover:border-purple-500 transition-all disabled:opacity-30 disabled:hover:bg-white/5 disabled:hover:border-white/10"
             >

@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+
 import httpx
-from typing import AsyncGenerator, Dict, List, Optional, Tuple
+
+from backend.llm.providers.base import JSON_TIMEOUT, PING_TIMEOUT, STREAM_TIMEOUT, BaseLLMProvider, ProviderHTTPError
+from backend.llm.schema import schema_instruction
 from backend.llm.types import LLMMessage
-from backend.llm.providers.base import BaseLLMProvider
 
 
 class OpenAICompatibleProvider(BaseLLMProvider):
@@ -27,6 +30,45 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
+
+    @staticmethod
+    def _messages(messages: List[LLMMessage], system_prompt: Optional[str]) -> List[Dict[str, str]]:
+        out = [{"role": "system", "content": system_prompt}] if system_prompt else []
+        return out + [{"role": m.role, "content": m.content} for m in messages]
+
+    async def generate_json(
+        self,
+        messages: List[LLMMessage],
+        model: str,
+        schema: Dict[str, Any],
+        schema_name: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.2,
+        max_tokens: int = 4000
+    ) -> str:
+        body: Dict[str, Any] = {
+            "model": model,
+            "messages": self._messages(messages, system_prompt),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": schema_name, "schema": schema, "strict": False},
+            },
+        }
+        async with httpx.AsyncClient(timeout=JSON_TIMEOUT) as client:
+            res = await client.post(f"{self.base_url}/chat/completions", headers=self._get_headers(), json=body)
+            if res.status_code in (400, 422):
+                # Many OpenAI-compatible servers only support JSON mode: put the schema in the prompt.
+                body["response_format"] = {"type": "json_object"}
+                body["messages"] = self._messages(
+                    messages, ((system_prompt or "") + "\n\n" + schema_instruction(schema)).strip()
+                )
+                res = await client.post(f"{self.base_url}/chat/completions", headers=self._get_headers(), json=body)
+        if res.status_code != 200:
+            raise ProviderHTTPError("OpenAI-compatible", res.status_code, res.text)
+        choices = res.json().get("choices") or [{}]
+        return choices[0].get("message", {}).get("content") or ""
 
     async def stream_chat(
         self,
@@ -50,7 +92,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "stream": True
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",
@@ -59,7 +101,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             ) as response:
                 if response.status_code != 200:
                     err_text = await response.aread()
-                    raise RuntimeError(f"OpenAI compatible API error ({response.status_code}): {err_text.decode('utf-8', errors='ignore')}")
+                    raise ProviderHTTPError("OpenAI-compatible", response.status_code, err_text.decode("utf-8", errors="ignore"))
 
                 async for line in response.aiter_lines():
                     line = line.strip()
@@ -87,7 +129,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "max_tokens": 10
         }
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=PING_TIMEOUT) as client:
                 res = await client.post(
                     f"{self.base_url}/chat/completions",
                     headers=self._get_headers(),

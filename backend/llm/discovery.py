@@ -6,13 +6,18 @@ Queries provider APIs to fetch available models.
 from __future__ import annotations
 
 import logging
+from typing import List, Optional
+
 import httpx
-from typing import Any, Dict, List, Optional
+
 from backend.config.settings import settings
 from backend.llm.types import ModelInfo, ProviderKind
 
 logger = logging.getLogger(__name__)
 TIMEOUT = 10.0
+
+# Gemini models that support generateContent but are not text chat models.
+GEMINI_NON_CHAT = ("embedding", "tts", "image", "robotics", "computer-use", "transcribe", "banana", "customtools")
 
 
 async def discover_models(
@@ -93,18 +98,52 @@ async def discover_models(
         return []
 
     if kind == "gemini":
+        if api_key:
+            try:
+                async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                    res = await client.get(
+                        "https://generativelanguage.googleapis.com/v1beta/models",
+                        params={"pageSize": 200},
+                        headers={"x-goog-api-key": api_key},
+                    )
+                if res.status_code == 200:
+                    for item in res.json().get("models", []):
+                        methods = item.get("supportedGenerationMethods", [])
+                        model_id = item.get("name", "").removeprefix("models/")
+                        if "generateContent" in methods and model_id.startswith("gemini") and not any(
+                            tag in model_id for tag in GEMINI_NON_CHAT
+                        ):
+                            models.append(ModelInfo(id=model_id, label=item.get("displayName") or model_id))
+                    if models:
+                        return models
+            except Exception as e:
+                logger.warning(f"Gemini discovery failed: {e}")
         return [
-            ModelInfo(id="gemini-2.5-flash", label="Gemini 2.5 Flash (Fast & Accurate)", capabilities=["chat"]),
-            ModelInfo(id="gemini-2.5-pro", label="Gemini 2.5 Pro (Deep Reasoning)", capabilities=["chat"]),
-            ModelInfo(id="gemini-1.5-flash", label="Gemini 1.5 Flash", capabilities=["chat"]),
-            ModelInfo(id="gemini-1.5-pro", label="Gemini 1.5 Pro", capabilities=["chat"]),
+            ModelInfo(id="gemini-3.8-flash", label="Gemini 3.8 Flash"),
+            ModelInfo(id="gemini-3.5-flash-lite", label="Gemini 3.5 Flash Lite"),
+            ModelInfo(id="gemini-3.1-pro-preview", label="Gemini 3.1 Pro Preview"),
         ]
 
     if kind == "anthropic":
+        if api_key:
+            try:
+                async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                    res = await client.get(
+                        "https://api.anthropic.com/v1/models",
+                        params={"limit": 100},
+                        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                    )
+                if res.status_code == 200:
+                    for item in res.json().get("data", []):
+                        models.append(ModelInfo(id=item["id"], label=item.get("display_name") or item["id"]))
+                    if models:
+                        return models
+            except Exception as e:
+                logger.warning(f"Anthropic discovery failed: {e}")
         return [
-            ModelInfo(id="claude-3-5-sonnet-latest", label="Claude 3.5 Sonnet (SOTA Coach)", capabilities=["chat"]),
-            ModelInfo(id="claude-3-7-sonnet-latest", label="Claude 3.7 Sonnet (Hybrid Reasoning)", capabilities=["chat"]),
-            ModelInfo(id="claude-3-5-haiku-latest", label="Claude 3.5 Haiku (Ultra Fast)", capabilities=["chat"]),
+            ModelInfo(id="claude-opus-5-5", label="Claude Opus 5.5"),
+            ModelInfo(id="claude-sonnet-5-5", label="Claude Sonnet 5.5"),
+            ModelInfo(id="claude-haiku-5-5", label="Claude Haiku 5.5"),
         ]
 
     if kind in ("openai", "openai_compatible"):

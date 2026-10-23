@@ -69,3 +69,7 @@ test_cuda.py
 
 web/node_modules/
 web/dist/
+
+# Playwright
+web/test-results/
+web/playwright-report/

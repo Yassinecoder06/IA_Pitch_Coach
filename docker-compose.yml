@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      # "slides" adds LibreOffice so PPTX decks can be uploaded; use "runtime" for a smaller image.
+      target: ${APP_TARGET:-slides}
     container_name: pitch-coach-app
     ports:
       - "8000:8000"

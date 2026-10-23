@@ -2,7 +2,7 @@ import os
 import re
 import shlex
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 try:
     from mcp.client.session import ClientSession

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import type { Scorecard } from '../lib/types';
+import type { Scorecard } from '@/lib/types';
 
 interface ScoreRadarProps {
   scorecard: Scorecard;

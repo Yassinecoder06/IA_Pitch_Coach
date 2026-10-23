@@ -1,6 +1,6 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
 import { Lock, KeyRound, Terminal, ShieldAlert, Sparkles, Eye, EyeOff } from 'lucide-react';
-import { api, AUTH_REQUIRED_EVENT } from '../lib/api';
+import { api, AUTH_REQUIRED_EVENT } from '@/lib/api';
 
 type GateState = 'loading' | 'setup' | 'login' | 'ready' | 'offline';
 

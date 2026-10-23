@@ -4,31 +4,34 @@ Owner authentication router adapted from Muse.
 
 from __future__ import annotations
 
-import time
+from typing import Optional
 
-from fastapi import APIRouter, Request, Response, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from backend.api.deps import extract_token, get_auth
+from backend.auth.owner import SESSION_COOKIE, SESSION_TTL_SECONDS, AuthContext, owner_service
+from backend.auth.ratelimit import Backoff
 from backend.config.settings import settings
-from backend.auth.owner import owner_service, SESSION_COOKIE, SESSION_TTL_SECONDS
-from backend.api.deps import extract_token
-
-# Failed-login backoff: after FREE_ATTEMPTS failures, each further failure doubles the lockout.
-FREE_ATTEMPTS = 5
-MAX_LOCKOUT_SECONDS = 15 * 60
-_failed_attempts = 0
-_locked_until = 0.0
+from backend.storage.profile_repository import profile_repository
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+login_backoff = Backoff(free_attempts=5)
+
 
 class SetupRequest(BaseModel):
-    passphrase: str = Field(min_length=6)
+    passphrase: str = Field(min_length=8)
     setupCode: str
 
 
 class LoginRequest(BaseModel):
     passphrase: str
+
+
+class ChangePassphraseRequest(BaseModel):
+    current: str
+    new: str = Field(min_length=8)
 
 
 def set_session_cookie(response: Response, token: str) -> None:
@@ -43,15 +46,25 @@ def set_session_cookie(response: Response, token: str) -> None:
     )
 
 
+async def issue_session(response: Response, profile_id: Optional[str] = None) -> None:
+    """Signs a new session cookie; auto-selects the profile when there is only one without a PIN."""
+    if profile_id is None:
+        profile_id = await profile_repository.sole_unlocked_profile()
+    if profile_id:
+        await profile_repository.touch(profile_id)
+    set_session_cookie(response, await owner_service.create_session_token(profile_id))
+
+
 @router.get("/owner")
 async def owner_status(request: Request):
-    """Returns whether the coach is configured and if the current client is authenticated."""
-    configured = owner_service.is_configured()
-    token = extract_token(request)
-    authenticated = bool(configured and owner_service.verify_session_token(token))
+    """Whether the coach is configured, unlocked, and which profile is active."""
+    configured = await owner_service.is_configured()
+    ctx = await owner_service.verify_session_token(extract_token(request)) if configured else None
+    profile = await profile_repository.get(ctx.profile_id) if ctx and ctx.profile_id else None
     return {
         "configured": configured,
-        "authenticated": authenticated
+        "authenticated": ctx is not None,
+        "profile": profile,
     }
 
 
@@ -59,36 +72,41 @@ async def owner_status(request: Request):
 async def setup_owner(payload: SetupRequest, response: Response):
     """First-run setup with setup code and passphrase."""
     try:
-        owner_service.setup(payload.passphrase, payload.setupCode)
-        set_session_cookie(response, owner_service.create_session_token())
-        return {"authenticated": True}
+        await owner_service.setup(payload.passphrase, payload.setupCode)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    await issue_session(response)
+    return {"authenticated": True}
 
 
 @router.post("/owner/login")
 async def login_owner(payload: LoginRequest, response: Response):
     """Unlock application with owner passphrase."""
-    global _failed_attempts, _locked_until
+    retry = login_backoff.retry_after()
+    if retry:
+        raise HTTPException(status_code=429, detail=f"Too many failed attempts. Try again in {retry}s.")
 
-    remaining = _locked_until - time.monotonic()
-    if remaining > 0:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many failed attempts. Try again in {int(remaining) + 1}s."
-        )
-
-    if not owner_service.verify_passphrase(payload.passphrase):
-        _failed_attempts += 1
-        if _failed_attempts >= FREE_ATTEMPTS:
-            lockout = min(MAX_LOCKOUT_SECONDS, 2 ** (_failed_attempts - FREE_ATTEMPTS + 1))
-            _locked_until = time.monotonic() + lockout
+    if not await owner_service.verify_passphrase(payload.passphrase):
+        login_backoff.fail()
         raise HTTPException(status_code=401, detail="Passphrase is not correct.")
 
-    _failed_attempts = 0
-    _locked_until = 0.0
-    set_session_cookie(response, owner_service.create_session_token())
+    login_backoff.succeed()
+    await issue_session(response)
     return {"authenticated": True}
+
+
+@router.post("/owner/passphrase")
+async def change_passphrase(payload: ChangePassphraseRequest, response: Response, ctx: AuthContext = Depends(get_auth)):
+    """Change the passphrase. Every other browser is signed out; this one gets a fresh cookie."""
+    retry = login_backoff.retry_after()
+    if retry:
+        raise HTTPException(status_code=429, detail=f"Too many failed attempts. Try again in {retry}s.")
+    if not await owner_service.change_passphrase(payload.current, payload.new):
+        login_backoff.fail()
+        raise HTTPException(status_code=400, detail="Current passphrase is not correct.")
+    login_backoff.succeed()
+    set_session_cookie(response, await owner_service.create_session_token(ctx.profile_id))
+    return {"ok": True}
 
 
 @router.post("/owner/logout")

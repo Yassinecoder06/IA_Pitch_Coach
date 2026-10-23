@@ -5,15 +5,11 @@ import {
   MessageSquare,
   Trash2,
   Edit2,
-  Lock,
-  Settings,
   Sparkles,
   Check,
   X,
-  Target,
-  ChevronRight,
 } from 'lucide-react';
-import type { Session } from '../lib/types';
+import type { Session } from '@/lib/types';
 
 interface SessionSidebarProps {
   sessions: Session[];
@@ -22,8 +18,6 @@ interface SessionSidebarProps {
   onNewSession: () => void;
   onRenameSession: (id: string, newTitle: string) => void;
   onDeleteSession: (id: string) => void;
-  onOpenSettings: () => void;
-  onLockApp: () => void;
 }
 
 export function SessionSidebar({
@@ -33,8 +27,6 @@ export function SessionSidebar({
   onNewSession,
   onRenameSession,
   onDeleteSession,
-  onOpenSettings,
-  onLockApp,
 }: SessionSidebarProps) {
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -73,13 +65,6 @@ export function SessionSidebar({
               <span className="text-[10px] text-purple-400 font-mono">SOTA Local Edition</span>
             </div>
           </div>
-          <button
-            onClick={onOpenSettings}
-            className="rounded-xl border border-white/10 p-2 text-neutral-400 hover:bg-white/5 hover:text-white transition-all"
-            title="AI Providers & Settings"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
         </div>
 
         {/* New Session Button */}
@@ -181,16 +166,6 @@ export function SessionSidebar({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-white/5 pt-3 mt-auto flex items-center justify-between">
-          <button
-            onClick={onLockApp}
-            className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs text-neutral-400 hover:bg-white/5 hover:text-white"
-          >
-            <Lock className="h-3.5 w-3.5" /> Lock App
-          </button>
-          <span className="text-[10px] text-neutral-600 font-mono">v3.0 Local</span>
-        </div>
       </aside>
 
       {/* Delete Confirmation Modal (Matching dark UI popup, no native alert) */}

@@ -1,53 +1,49 @@
-import os
 import pytest
-from backend.storage.database import db
-from backend.auth.owner import owner_service, DEFAULT_LOCAL_USER_ID
 
-
-@pytest.fixture(autouse=True)
-def setup_test_db(tmp_path):
-    test_db = tmp_path / "test.db"
-    db.sqlite_file = test_db
-    db.is_postgres = False
-    db.init_schema()
-    owner_service._setup_code = None
+from backend.auth.owner import AuthContext, owner_service
+from tests.conftest import run
 
 
 def test_first_run_setup_code():
     code = owner_service.get_or_create_setup_code()
     assert len(code) == 9  # XXXX-XXXX
     assert "-" in code
-    assert not owner_service.is_configured()
+    assert not run(owner_service.is_configured())
 
 
 def test_owner_setup_and_login():
     code = owner_service.get_or_create_setup_code()
-    # Wrong code fails
     with pytest.raises(ValueError):
-        owner_service.setup("Passphrase1234", "WRONG-CODE")
+        run(owner_service.setup("Passphrase1234", "WRONG-CODE"))
 
-    # Correct code succeeds
-    assert owner_service.setup("Passphrase1234", code)
-    assert owner_service.is_configured()
+    assert run(owner_service.setup("Passphrase1234", code))
+    assert run(owner_service.is_configured())
 
-    # Second setup fails
     with pytest.raises(ValueError):
-        owner_service.setup("AnotherPassphrase", code)
+        run(owner_service.setup("AnotherPassphrase", code))
 
-    # Login verification
-    assert owner_service.verify_passphrase("Passphrase1234")
-    assert not owner_service.verify_passphrase("WrongPassphrase")
+    assert run(owner_service.verify_passphrase("Passphrase1234"))
+    assert not run(owner_service.verify_passphrase("WrongPassphrase"))
 
 
-def test_session_token_minting_and_verification():
-    code = owner_service.get_or_create_setup_code()
-    owner_service.setup("ValidPassword123", code)
+def test_session_token_minting_and_verification(default_profile_id):
+    run(owner_service.setup("ValidPassword123", owner_service.get_or_create_setup_code()))
 
-    token = owner_service.create_session_token()
-    user_id = owner_service.verify_session_token(token)
-    assert user_id == DEFAULT_LOCAL_USER_ID
+    assert run(owner_service.verify_session_token(run(owner_service.create_session_token()))) == AuthContext(None)
+    token = run(owner_service.create_session_token(default_profile_id))
+    assert run(owner_service.verify_session_token(token)) == AuthContext(default_profile_id)
 
-    # Malformed tokens fail
-    assert owner_service.verify_session_token("invalid.token") is None
-    assert owner_service.verify_session_token("") is None
-    assert owner_service.verify_session_token(None) is None
+    assert run(owner_service.verify_session_token("invalid.token")) is None
+    assert run(owner_service.verify_session_token("")) is None
+    assert run(owner_service.verify_session_token(None)) is None
+    payload, sig = token.split(".")
+    assert run(owner_service.verify_session_token(f"{payload}.{'0' * len(sig)}")) is None
+
+
+def test_change_passphrase_revokes_old_tokens():
+    run(owner_service.setup("ValidPassword123", owner_service.get_or_create_setup_code()))
+    old = run(owner_service.create_session_token())
+    assert not run(owner_service.change_passphrase("wrong", "NewPassword456"))
+    assert run(owner_service.change_passphrase("ValidPassword123", "NewPassword456"))
+    assert run(owner_service.verify_session_token(old)) is None
+    assert run(owner_service.verify_passphrase("NewPassword456"))

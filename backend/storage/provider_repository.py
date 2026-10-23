@@ -1,25 +1,27 @@
 """
 AI Provider repository with encrypted key storage adapted from Muse.
-Provides multi-AI provider management and fallback configuration.
+Providers and model routing are install-wide: they hold the owner's API keys
+and are shared by every local profile.
 """
 
 from __future__ import annotations
 
-import os
-import json
-import uuid
 import base64
 import hashlib
+import os
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timezone
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from sqlalchemy import select
 
-from backend.config.settings import settings, LEGACY_DEFAULT_SECRET
-from backend.storage.database import db, DEFAULT_LOCAL_USER_ID
+from backend.config.settings import LEGACY_DEFAULT_SECRET, settings
+from backend.db import database
+from backend.db.models import AiProvider, AiSettings, iso
+from backend.db.types import utcnow
 
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+# Tasks that can be routed to their own preferred model.
+AI_TASKS = ("chat", "judge", "deck_gen", "qa")
+DEFAULT_TTS_VOICE = "en_US-lessac-medium"
 
 
 def make_key_hint(key: Optional[str]) -> Optional[str]:
@@ -63,194 +65,158 @@ def decrypt_secret(encrypted: Optional[str]) -> Optional[str]:
     return _decrypt_with(_get_encryption_key(), encrypted)
 
 
-def migrate_legacy_encryption() -> int:
+async def migrate_legacy_encryption() -> int:
     """Re-encrypt provider keys that were stored under the old hardcoded default secret."""
     legacy_key = _derive_key(LEGACY_DEFAULT_SECRET)
     if legacy_key == _get_encryption_key():
         return 0
-    rows = db.fetch_all("SELECT id, api_key_encrypted FROM ai_providers WHERE api_key_encrypted IS NOT NULL")
     migrated = 0
-    for row in rows:
-        if decrypt_secret(row["api_key_encrypted"]) is not None:
-            continue
-        plain = _decrypt_with(legacy_key, row["api_key_encrypted"])
-        if plain is None:
-            continue
-        db.execute(
-            "UPDATE ai_providers SET api_key_encrypted = ? WHERE id = ?",
-            (encrypt_secret(plain), row["id"])
-        )
-        migrated += 1
+    async with database.session() as s:
+        rows = (await s.execute(select(AiProvider).where(AiProvider.api_key_encrypted.is_not(None)))).scalars()
+        for row in rows:
+            if decrypt_secret(row.api_key_encrypted) is not None:
+                continue
+            plain = _decrypt_with(legacy_key, row.api_key_encrypted)
+            if plain is None:
+                continue
+            row.api_key_encrypted = encrypt_secret(plain)
+            migrated += 1
     return migrated
+
+
+def _provider_dict(p: AiProvider, include_key: bool = False) -> Dict[str, Any]:
+    item = {
+        "id": p.id,
+        "kind": p.kind,
+        "name": p.name,
+        "base_url": p.base_url,
+        "key_hint": p.key_hint,
+        "has_key": bool(p.key_hint),
+        "models": p.models_json or [],
+        "enabled": bool(p.enabled),
+        "last_fetched_at": iso(p.last_fetched_at),
+        "last_error": p.last_error,
+        "created_at": iso(p.created_at),
+        "updated_at": iso(p.updated_at),
+    }
+    if include_key:
+        item["api_key"] = decrypt_secret(p.api_key_encrypted)
+    return item
 
 
 class ProviderRepository:
     """Manages configured AI providers, keys, and model preferences."""
 
-    def list_providers(self, user_id: str = DEFAULT_LOCAL_USER_ID) -> List[Dict[str, Any]]:
-        rows = db.fetch_all(
-            """SELECT id, user_id, kind, name, base_url, key_hint, models_json, enabled, last_fetched_at, last_error, created_at, updated_at
-               FROM ai_providers WHERE user_id = ? ORDER BY created_at ASC""",
-            (user_id,)
-        )
-        providers = []
-        for r in rows:
-            item = dict(r)
-            try:
-                item["models"] = json.loads(item["models_json"]) if item.get("models_json") else []
-            except Exception:
-                item["models"] = []
-            item["has_key"] = bool(item.get("key_hint"))
-            providers.append(item)
-        return providers
+    async def list_providers(self) -> List[Dict[str, Any]]:
+        async with database.session() as s:
+            rows = (await s.execute(select(AiProvider).order_by(AiProvider.created_at))).scalars().all()
+            return [_provider_dict(p) for p in rows]
 
-    def get_provider(self, provider_id: str, user_id: str = DEFAULT_LOCAL_USER_ID) -> Optional[Dict[str, Any]]:
-        row = db.fetch_one(
-            """SELECT id, user_id, kind, name, base_url, api_key_encrypted, key_hint, models_json, enabled, last_fetched_at, last_error, created_at, updated_at
-               FROM ai_providers WHERE id = ? AND user_id = ?""",
-            (provider_id, user_id)
-        )
-        if not row:
-            return None
-        item = dict(row)
-        try:
-            item["models"] = json.loads(item["models_json"]) if item.get("models_json") else []
-        except Exception:
-            item["models"] = []
-        item["api_key"] = decrypt_secret(item.get("api_key_encrypted"))
-        item["has_key"] = bool(item.get("key_hint"))
-        return item
+    async def get_provider(self, provider_id: str) -> Optional[Dict[str, Any]]:
+        async with database.session() as s:
+            p = await s.get(AiProvider, provider_id)
+            return _provider_dict(p, include_key=True) if p else None
 
-    def create_provider(
+    async def create_provider(
         self,
         kind: str,
         name: str,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        user_id: str = DEFAULT_LOCAL_USER_ID
     ) -> Dict[str, Any]:
-        provider_id = str(uuid.uuid4())
-        encrypted_key = encrypt_secret(api_key) if api_key else None
-        hint = make_key_hint(api_key)
-        created_at = now_iso()
+        async with database.session() as s:
+            p = AiProvider(
+                kind=kind,
+                name=name,
+                base_url=base_url,
+                api_key_encrypted=encrypt_secret(api_key),
+                key_hint=make_key_hint(api_key),
+                models_json=[],
+                enabled=True,
+            )
+            s.add(p)
+            await s.flush()
+            return _provider_dict(p, include_key=True)
 
-        db.execute(
-            """INSERT INTO ai_providers (id, user_id, kind, name, base_url, api_key_encrypted, key_hint, models_json, enabled, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 1, ?, ?)""",
-            (provider_id, user_id, kind, name, base_url, encrypted_key, hint, created_at, created_at)
-        )
-        return self.get_provider(provider_id, user_id) or {}
-
-    def update_provider(
+    async def update_provider(
         self,
         provider_id: str,
         name: Optional[str] = None,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         enabled: Optional[bool] = None,
-        user_id: str = DEFAULT_LOCAL_USER_ID
     ) -> Optional[Dict[str, Any]]:
-        existing = self.get_provider(provider_id, user_id)
-        if not existing:
-            return None
+        async with database.session() as s:
+            p = await s.get(AiProvider, provider_id)
+            if not p:
+                return None
+            if name is not None:
+                p.name = name
+            if base_url is not None:
+                p.base_url = base_url or None
+            if enabled is not None:
+                p.enabled = enabled
+            if api_key is not None:  # "" clears the key
+                p.api_key_encrypted = encrypt_secret(api_key)
+                p.key_hint = make_key_hint(api_key)
+            await s.flush()
+            return _provider_dict(p, include_key=True)
 
-        new_name = name if name is not None else existing["name"]
-        new_base_url = base_url if base_url is not None else existing["base_url"]
-        new_enabled = int(enabled) if enabled is not None else existing["enabled"]
+    async def save_models(self, provider_id: str, models: List[Dict[str, Any]], error: Optional[str] = None) -> None:
+        async with database.session() as s:
+            p = await s.get(AiProvider, provider_id)
+            if p:
+                p.models_json = models
+                p.last_error = error
+                p.last_fetched_at = utcnow()
 
-        if api_key is not None:
-            encrypted_key = encrypt_secret(api_key) if api_key else None
-            hint = make_key_hint(api_key)
-            db.execute(
-                """UPDATE ai_providers
-                   SET name = ?, base_url = ?, api_key_encrypted = ?, key_hint = ?, enabled = ?, updated_at = ?
-                   WHERE id = ? AND user_id = ?""",
-                (new_name, new_base_url, encrypted_key, hint, new_enabled, now_iso(), provider_id, user_id)
-            )
-        else:
-            db.execute(
-                """UPDATE ai_providers
-                   SET name = ?, base_url = ?, enabled = ?, updated_at = ?
-                   WHERE id = ? AND user_id = ?""",
-                (new_name, new_base_url, new_enabled, now_iso(), provider_id, user_id)
-            )
+    async def delete_provider(self, provider_id: str) -> bool:
+        async with database.session() as s:
+            p = await s.get(AiProvider, provider_id)
+            if not p:
+                return False
+            await s.delete(p)
+            prefs = await s.get(AiSettings, 1)
+            if prefs:
+                prefix = f"{provider_id}:"
+                prefs.chat_models_json = [r for r in prefs.chat_models_json or [] if not r.startswith(prefix)]
+                prefs.fallback_models_json = [r for r in prefs.fallback_models_json or [] if not r.startswith(prefix)]
+                prefs.task_models_json = {
+                    t: r for t, r in (prefs.task_models_json or {}).items() if not r.startswith(prefix)
+                }
+            return True
 
-        return self.get_provider(provider_id, user_id)
-
-    def save_models(
-        self,
-        provider_id: str,
-        models: List[Dict[str, Any]],
-        error: Optional[str] = None,
-        user_id: str = DEFAULT_LOCAL_USER_ID
-    ) -> None:
-        db.execute(
-            """UPDATE ai_providers
-               SET models_json = ?, last_error = ?, last_fetched_at = ?, updated_at = ?
-               WHERE id = ? AND user_id = ?""",
-            (json.dumps(models), error, now_iso(), now_iso(), provider_id, user_id)
-        )
-
-    def delete_provider(self, provider_id: str, user_id: str = DEFAULT_LOCAL_USER_ID) -> bool:
-        db.execute("DELETE FROM ai_providers WHERE id = ? AND user_id = ?", (provider_id, user_id))
-        return True
-
-    def get_preferences(self, user_id: str = DEFAULT_LOCAL_USER_ID) -> Dict[str, Any]:
-        row = db.fetch_one("SELECT * FROM ai_preferences WHERE user_id = ?", (user_id,))
-        if not row:
+    async def get_preferences(self) -> Dict[str, Any]:
+        async with database.session() as s:
+            row = await s.get(AiSettings, 1)
             return {
-                "chat_models": [],
-                "fallback_models": [],
-                "tts_ref": "builtin:piper",
-                "tts_voice": "en_US-lessac-medium",
-                "stt_ref": "builtin:whisper"
+                "chat_models": list(row.chat_models_json or []) if row else [],
+                "fallback_models": list(row.fallback_models_json or []) if row else [],
+                "task_models": dict(row.task_models_json or {}) if row else {},
+                "tts_voice": (row.tts_voice if row else None) or DEFAULT_TTS_VOICE,
             }
-        item = dict(row)
-        try:
-            chat_models = json.loads(item["chat_models_json"]) if item.get("chat_models_json") else []
-        except Exception:
-            chat_models = []
-        try:
-            fallback_models = json.loads(item["fallback_models_json"]) if item.get("fallback_models_json") else []
-        except Exception:
-            fallback_models = []
 
-        return {
-            "chat_models": chat_models,
-            "fallback_models": fallback_models,
-            "tts_ref": item.get("tts_ref") or "builtin:piper",
-            "tts_voice": item.get("tts_voice") or "en_US-lessac-medium",
-            "stt_ref": item.get("stt_ref") or "builtin:whisper"
-        }
-
-    def save_preferences(
+    async def save_preferences(
         self,
         chat_models: List[str],
         fallback_models: List[str],
-        tts_ref: Optional[str] = None,
+        task_models: Optional[Dict[str, str]] = None,
         tts_voice: Optional[str] = None,
-        stt_ref: Optional[str] = None,
-        user_id: str = DEFAULT_LOCAL_USER_ID
     ) -> Dict[str, Any]:
-        existing = db.fetch_one("SELECT user_id FROM ai_preferences WHERE user_id = ?", (user_id,))
-        now = now_iso()
-        chat_json = json.dumps(chat_models)
-        fallback_json = json.dumps(fallback_models)
-
-        if existing:
-            db.execute(
-                """UPDATE ai_preferences
-                   SET chat_models_json = ?, fallback_models_json = ?, tts_ref = ?, tts_voice = ?, stt_ref = ?, updated_at = ?
-                   WHERE user_id = ?""",
-                (chat_json, fallback_json, tts_ref, tts_voice, stt_ref, now, user_id)
-            )
-        else:
-            db.execute(
-                """INSERT INTO ai_preferences (user_id, chat_models_json, fallback_models_json, tts_ref, tts_voice, stt_ref, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (user_id, chat_json, fallback_json, tts_ref, tts_voice, stt_ref, now)
-            )
-        return self.get_preferences(user_id)
+        async with database.session() as s:
+            row = await s.get(AiSettings, 1)
+            if not row:
+                row = AiSettings(id=1)
+                s.add(row)
+            row.chat_models_json = chat_models
+            row.fallback_models_json = fallback_models
+            if task_models is not None:
+                row.task_models_json = {t: r for t, r in task_models.items() if t in AI_TASKS and r}
+            elif row.task_models_json is None:
+                row.task_models_json = {}
+            if tts_voice is not None:
+                row.tts_voice = tts_voice
+        return await self.get_preferences()
 
 
 provider_repository = ProviderRepository()
