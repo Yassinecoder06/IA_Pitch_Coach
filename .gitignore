@@ -62,3 +62,4 @@ docker/data/
 .ps
 
 summary.md
+test_cuda.py

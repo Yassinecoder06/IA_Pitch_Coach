@@ -5,7 +5,10 @@ Provides real-time speech transcription using faster-whisper.
 Optimized for low-resource machines with configurable model sizes.
 """
 
+import ctypes
+import importlib.util
 import os
+import sysconfig
 import tempfile
 from typing import Optional, Tuple, List
 from dataclasses import dataclass
@@ -62,6 +65,83 @@ class STTEngine:
             return normalized
         return "int8"
 
+    @staticmethod
+    def _nvidia_library_dirs() -> List[Path]:
+        """Find CUDA shared-library directories installed by NVIDIA pip wheels."""
+        dirs: List[Path] = []
+
+        for package in ("nvidia.cuda_runtime.lib", "nvidia.cublas.lib", "nvidia.cudnn.lib"):
+            try:
+                spec = importlib.util.find_spec(package)
+            except ModuleNotFoundError:
+                spec = None
+            if spec and spec.submodule_search_locations:
+                dirs.extend(Path(path) for path in spec.submodule_search_locations)
+
+        purelib = Path(sysconfig.get_paths().get("purelib", ""))
+        nvidia_root = purelib / "nvidia"
+        if nvidia_root.exists():
+            dirs.extend(path for path in nvidia_root.glob("*/lib") if path.is_dir())
+
+        unique_dirs: List[Path] = []
+        seen = set()
+        for path in dirs:
+            resolved = path.resolve()
+            if resolved not in seen and resolved.exists():
+                unique_dirs.append(resolved)
+                seen.add(resolved)
+
+        return unique_dirs
+
+    @classmethod
+    def _prepare_cuda_libraries(cls) -> None:
+        """
+        Make CUDA libraries from pip wheels visible to CTranslate2.
+
+        CTranslate2 loads CUDA dependencies lazily, so model construction can
+        appear successful while the first transcription later fails with
+        "libcublas.so.12 is not found". Preloading the wheel libraries makes the
+        runtime behavior match startup.
+        """
+        lib_dirs = cls._nvidia_library_dirs()
+        if not lib_dirs:
+            print("[STT] Warning: CUDA requested, but no NVIDIA pip wheel library directories were found")
+            return
+
+        existing = os.environ.get("LD_LIBRARY_PATH", "")
+        existing_parts = [part for part in existing.split(os.pathsep) if part]
+        prepend_parts = [str(path) for path in lib_dirs if str(path) not in existing_parts]
+        if prepend_parts:
+            os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(prepend_parts + existing_parts)
+
+        libraries = (
+            "libcudart.so.12",
+            "libcublas.so.12",
+            "libcublasLt.so.12",
+            "libcudnn.so.9",
+            "libcudnn_ops.so.9",
+            "libcudnn_cnn.so.9",
+        )
+
+        loaded = []
+        missing = []
+        for library in libraries:
+            lib_path = next((path / library for path in lib_dirs if (path / library).exists()), None)
+            if lib_path is None:
+                missing.append(library)
+                continue
+
+            try:
+                ctypes.CDLL(str(lib_path), mode=ctypes.RTLD_GLOBAL)
+                loaded.append(library)
+            except OSError as exc:
+                print(f"[STT] Warning: failed to preload {library}: {exc}")
+
+        if loaded:
+            print(f"[STT] CUDA libraries ready: {', '.join(loaded)}")
+        if missing:
+            print(f"[STT] Warning: CUDA libraries not found in Python environment: {', '.join(missing)}")
+
     def load_model(self) -> bool:
         """
         Load the faster-whisper model.
@@ -89,6 +169,8 @@ class STTEngine:
         for device, compute_type in attempts:
             try:
                 print(f"[STT] Device: {device}, Compute type: {compute_type}")
+                if device == "cuda":
+                    self._prepare_cuda_libraries()
                 STTEngine._model = WhisperModel(
                     self.model_size,
                     device=device,
