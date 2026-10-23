@@ -301,3 +301,10 @@ def transcribe_audio(audio_data: bytes, sample_rate: int = 16000) -> Tuple[str, 
     """
     result = get_engine().transcribe(audio_data)
     return result.text, result.confidence
+
+
+async def async_transcribe_audio(audio_data: bytes, sample_rate: int = 16000) -> Tuple[str, float]:
+    """Asynchronously transcribe audio off the event loop thread."""
+    import asyncio
+    return await asyncio.to_thread(transcribe_audio, audio_data, sample_rate)
+

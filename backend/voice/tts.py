@@ -344,6 +344,16 @@ def synthesize_speech(
     return get_engine().synthesize(text, voice)
 
 
+async def async_synthesize_speech(
+    text: str,
+    voice: Optional[str] = None
+) -> Optional[bytes]:
+    """Asynchronously synthesize speech off the event loop thread."""
+    import asyncio
+    return await asyncio.to_thread(synthesize_speech, text, voice)
+
+
+
 def split_into_sentences(text: str) -> List[str]:
     """
     Split text into sentences for progressive TTS.

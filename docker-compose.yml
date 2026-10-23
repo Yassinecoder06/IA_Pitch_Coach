@@ -1,0 +1,72 @@
+name: pitch-coach
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: pitch-coach-app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://pitchcoach:pitchcoach_secret@db:5432/pitchcoach
+      - OLLAMA_ENDPOINT=http://ollama:11434
+      - DEFAULT_LLM=ollama
+      - DEFAULT_MODEL=qwen3:0.6b
+      - WHISPER_MODEL_SIZE=tiny.en
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+      - PIPER_VOICE=en_US-lessac-medium
+      - MCP_ENABLED=true
+    volumes:
+      - whisper-models:/app/models/whisper
+      - piper-models:/app/models/piper
+      - app-data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - coach-net
+
+  db:
+    image: postgres:16-alpine
+    container_name: pitch-coach-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pitchcoach
+      POSTGRES_PASSWORD: pitchcoach_secret
+      POSTGRES_DB: pitchcoach
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pitchcoach -d pitchcoach"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coach-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pitch-coach-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - coach-net
+
+volumes:
+  postgres-data:
+  whisper-models:
+  piper-models:
+  app-data:
+  ollama-data:
+
+networks:
+  coach-net:
+    driver: bridge

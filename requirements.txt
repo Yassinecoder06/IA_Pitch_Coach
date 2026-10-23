@@ -1,45 +1,35 @@
 # AI Pitch Coach - Python Dependencies
 # =====================================
-#
-# Install with: pip install -r requirements.txt
-#
-# Optimized for 8GB RAM machines with CPU-only inference
 
 # === Web Framework ===
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 websockets>=12.0
+python-multipart>=0.0.6
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
 
-# === Speech-to-Text ===
-# faster-whisper: 4x faster than OpenAI Whisper, uses CTranslate2
+# === Speech-to-Text & Text-to-Speech ===
 faster-whisper>=1.0.0
+piper-tts>=1.2.0
 
-# === Text-to-Speech ===
-# Piper TTS: Fast local TTS (install separately or via pip)
-# pip install piper-tts
-
-# === HTTP Client ===
+# === HTTP & AI Client ===
 httpx>=0.26.0
 
-# === Audio Processing ===
+# === Audio Processing & Metrics ===
 numpy>=1.24.0
 soundfile>=0.12.0
 librosa>=0.10.2
-pyAudioAnalysis>=0.3.14
 
-# === Persistence ===
-supabase>=2.4.0
+# === Local Database & Cryptography ===
+psycopg[binary]>=3.1.0
+asyncpg>=0.29.0
+cryptography>=42.0.0
+python-dotenv>=1.0.0
 
-# === MCP Tooling ===
+# === Tooling & Extensibility ===
 mcp>=1.2.0
 
-# === Utilities ===
-python-multipart>=0.0.6  # For file uploads
-python-dotenv>=1.0.0     # Environment configuration
-
-# === Optional: GPU Acceleration ===
-# Uncomment for NVIDIA GPU support:
-ctranslate2>=4.0.0
-nvidia-cuda-runtime-cu12>=12.0.0
-nvidia-cublas-cu12>=12.0.0
-nvidia-cudnn-cu12>=9.0.0
+# === Testing & Quality ===
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

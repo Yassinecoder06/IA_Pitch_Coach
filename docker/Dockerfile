@@ -1,65 +1,64 @@
-# AI Pitch Coach - Dockerfile
-# Multi-stage build for optimized image size
+# ==============================================================================
+# AI Pitch Coach - Production Multi-Stage Dockerfile
+# ==============================================================================
 
-# Stage 1: Build dependencies
-FROM python:3.11-slim as builder
+# --- Stage 1: Build React Frontend ---
+FROM node:22-alpine AS web-builder
+WORKDIR /app/web
+COPY web/package.json ./
+RUN npm install
+COPY web/ ./
+RUN npm run build
 
+# --- Stage 2: Build Python Dependencies ---
+FROM python:3.12-slim AS py-builder
 WORKDIR /app
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for caching
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Stage 2: Runtime image
-FROM python:3.11-slim
-
+# --- Stage 3: Runtime Image ---
+FROM python:3.12-slim AS runtime
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
+# System audio dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    wget \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python packages from builder
-COPY --from=builder /root/.local /root/.local
+# Copy installed python dependencies from py-builder
+COPY --from=py-builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
-
-# Install Piper TTS
-RUN pip install --no-cache-dir piper-tts
-
-# Create directories
-RUN mkdir -p /app/models/whisper /app/models/piper
-
-# Copy application code
-COPY ai_pitch_coach/ /app/ai_pitch_coach/
-
-# Set environment variables
+ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-ENV WHISPER_MODEL_SIZE=tiny
-ENV WHISPER_DEVICE=cpu
-ENV WHISPER_COMPUTE_TYPE=int8
-ENV OLLAMA_BASE_URL=http://ollama:11434
-ENV OLLAMA_MODEL=qwen3:0.6b
+
+# Create persistent model directories
+RUN mkdir -p /app/models/whisper /app/models/piper /app/data
+
+# Copy backend application and skills
+COPY backend /app/backend
+COPY services /app/services
+
+# Copy compiled frontend from web-builder
+COPY --from=web-builder /app/web/dist /app/web/dist
+
+# Default runtime configuration
 ENV HOST=0.0.0.0
 ENV PORT=8000
+ENV DATABASE_URL=sqlite:////app/data/pitch_coach.db
+ENV WHISPER_MODEL_SIZE=tiny.en
+ENV WHISPER_DEVICE=cpu
+ENV WHISPER_COMPUTE_TYPE=int8
+ENV OLLAMA_ENDPOINT=http://host.docker.internal:11434
 
-# Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-WORKDIR /app/ai_pitch_coach/backend
-CMD ["python", "main.py"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
