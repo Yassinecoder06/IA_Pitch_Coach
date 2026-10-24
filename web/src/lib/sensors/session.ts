@@ -68,8 +68,9 @@ export interface SensorOptions {
   onFrame?: (frame: SensorFrame) => void;
 }
 
-const FAST_INTERVAL = 1000 / 15;
-const SLOW_INTERVAL = 1000 / 8;
+// Face and pose take turns, so each landmarker runs at half these frame rates (15 / 8 Hz).
+const FAST_INTERVAL = 1000 / 30;
+const SLOW_INTERVAL = 1000 / 16;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
 
 /** Owns the camera, the mic, the vision worker and all trackers for one practice run. */
@@ -151,11 +152,11 @@ export class SensorSession {
       this.schedulePump();
     }
 
-    const gaze = this.gaze.update(msg.face, msg.t);
-    const posture = analysePosture(msg.pose);
-    const motion = this.motion.update(msg.pose, msg.t);
     this.setVision({ fps: this.resultTimes.length / 2, inferenceMs: this.inferenceEma });
-    this.emit({ gaze, posture, motion, face: msg.face, pose: msg.pose });
+    if (msg.face !== undefined) this.emit({ gaze: this.gaze.update(msg.face, msg.t), face: msg.face });
+    if (msg.pose !== undefined) {
+      this.emit({ posture: analysePosture(msg.pose), motion: this.motion.update(msg.pose, msg.t), pose: msg.pose });
+    }
   }
 
   private schedulePump() {

@@ -30,18 +30,20 @@ export type VisionRequest =
 export type VisionResponse =
   | { type: 'ready'; delegate: 'GPU' | 'CPU' }
   | { type: 'error'; message: string }
-  | { type: 'result'; t: number; face: FaceFrame | null; pose: PoseFrame | null; inferenceMs: number };
+  // `undefined` means that landmarker did not run on this frame (they take turns).
+  | { type: 'result'; t: number; face?: FaceFrame | null; pose?: PoseFrame | null; inferenceMs: number };
 
 let face: FaceLandmarker | null = null;
 let pose: PoseLandmarker | null = null;
 let lastT = -1;
+let turn = 0;
 let config: { base: string; face: boolean; pose: boolean } | null = null;
 let delegate: 'GPU' | 'CPU' = 'GPU';
 
 // Delegate auto-tuning: a GPU delegate on software GL (headless, blocklisted drivers) can be far
 // slower than WASM on the CPU, so the first frames are timed and the faster delegate is kept.
 const PROBE_FRAMES = 15;
-const SLOW_GPU_MS = 80;
+const SLOW_GPU_MS = 40; // per landmarker run
 let probe: { phase: 'gpu' | 'cpu' | 'done'; times: number[]; gpuMedian: number } = { phase: 'gpu', times: [], gpuMedian: 0 };
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
@@ -144,8 +146,11 @@ self.onmessage = async (event: MessageEvent<VisionRequest>) => {
     lastT = t;
     const start = performance.now();
     try {
-      const f = face ? compactFace(face.detectForVideo(bitmap, t)) : null;
-      const p = pose ? compactPose(pose.detectForVideo(bitmap, t)) : null;
+      // With both landmarkers, they alternate frames so one frame costs a single inference.
+      const runFace = !!face && (!pose || turn % 2 === 0);
+      turn++;
+      const f = runFace ? compactFace(face!.detectForVideo(bitmap, t)) : undefined;
+      const p = !runFace && pose ? compactPose(pose.detectForVideo(bitmap, t)) : undefined;
       const inferenceMs = performance.now() - start;
       post({ type: 'result', t: msg.t, face: f, pose: p, inferenceMs });
       bitmap.close();
