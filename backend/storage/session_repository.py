@@ -27,10 +27,10 @@ class SessionRepository:
     """Manages pitch coaching sessions and historical messages."""
 
     async def create_session(
-        self, profile_id: str, title: str = "Startup Pitch Practice", mode: str = "pitch_analysis"
+        self, profile_id: str, title: str = "Startup Pitch Practice", mode: str = "pitch_analysis", context_md: str = ""
     ) -> Dict[str, Any]:
         async with database.session() as s:
-            row = CoachSession(profile_id=profile_id, title=title, current_mode=mode)
+            row = CoachSession(profile_id=profile_id, title=title, current_mode=mode, context_md=context_md)
             s.add(row)
             await s.flush()
             return row.to_dict()

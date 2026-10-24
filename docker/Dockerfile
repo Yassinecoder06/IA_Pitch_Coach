@@ -7,7 +7,9 @@ FROM node:22-alpine AS web-builder
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
+COPY shared /app/shared
 COPY web/ ./
+# prebuild downloads the MediaPipe WASM runtime and models into public/mediapipe
 RUN npm run build
 
 # --- Stage 2: Build Python Dependencies ---
@@ -42,6 +44,7 @@ RUN mkdir -p /app/models/whisper /app/models/piper /app/data
 
 # Copy backend application and skills
 COPY backend /app/backend
+COPY shared /app/shared
 COPY services /app/services
 
 # Copy compiled frontend from web-builder

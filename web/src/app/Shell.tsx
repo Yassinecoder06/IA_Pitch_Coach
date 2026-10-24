@@ -116,11 +116,3 @@ export function Shell() {
     </div>
   );
 }
-
-export function ComingSoon({ title }: { title: string }) {
-  return (
-    <div className="flex h-full items-center justify-center text-neutral-500">
-      <p>{title} is not available yet.</p>
-    </div>
-  );
-}

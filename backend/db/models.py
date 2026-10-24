@@ -91,6 +91,16 @@ class AiSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
 
+class AppSettings(Base):
+    """Install-wide privacy settings."""
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(sa.SmallInteger, primary_key=True, default=1)
+    keep_recordings: Mapped[bool] = mapped_column(sa.Boolean, default=True)
+    recording_retention_days: Mapped[Optional[int]] = mapped_column(sa.Integer, nullable=True)
+
+
 class CoachSession(Base):
     """A conversational coaching session (the chat workspace)."""
 

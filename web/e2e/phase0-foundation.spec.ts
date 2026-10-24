@@ -69,7 +69,7 @@ test('profiles: create a PIN-protected profile, data is separated, switching nee
 });
 
 test('lock signs out and the passphrase unlocks again', async ({ page }) => {
-  await unlock(page);
+  await unlock(page, { pickDefault: false });
   // With several profiles unlocking lands on the picker; pick one, then lock from the app shell.
   if (await page.getByText('Who is practicing?').isVisible()) await page.getByRole('button', { name: 'Me', exact: true }).click();
   await page.getByLabel('Lock Pitch Coach').click();

@@ -6,7 +6,7 @@ import {
   Lightbulb,
   Award,
 } from 'lucide-react';
-import { ScoreRadar } from '@/components/ui/ScoreRadar';
+import { RadarChart } from '@/components/ui/charts';
 import type { Scorecard, SpeechMetrics } from '@/lib/types';
 
 interface PitchInsightsProps {
@@ -107,7 +107,13 @@ export function PitchInsights({ scorecard, speechMetrics }: PitchInsightsProps) 
           <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
             Multi-Dimensional Radar
           </h4>
-          <ScoreRadar scorecard={scorecard} size={250} />
+          <RadarChart
+            title="6-dimension pitch rubric"
+            data={(['clarity', 'structure', 'persuasion', 'delivery', 'confidence', 'relevance'] as const).map(d => ({
+              label: d[0].toUpperCase() + d.slice(1),
+              value: Math.round(scorecard[d]?.score ?? 0),
+            }))}
+          />
         </div>
       )}
 

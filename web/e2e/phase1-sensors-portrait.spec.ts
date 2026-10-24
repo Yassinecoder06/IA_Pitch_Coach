@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { chromeArgs } from '../playwright.config';
+import { chromeArgs, chromeEnv } from '../playwright.config';
 import { unlock } from './helpers';
 
 // Fake camera: MediaPipe's portrait test image (facing the lens, arms crossed).
-test.use({ launchOptions: { args: chromeArgs('portrait') } });
+test.use({ launchOptions: { args: chromeArgs('portrait'), env: chromeEnv() } });
 
 test('live practice: vision worker tracks the face and posture, voice and captions update', async ({ page }) => {
   await unlock(page);

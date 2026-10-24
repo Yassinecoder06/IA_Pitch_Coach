@@ -7,6 +7,7 @@ streaming speech-to-text, real-time coaching evaluation, and text-to-speech.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,10 +23,13 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from backend.api.routers.ai import router as ai_router
+from backend.api.routers.arcade import router as arcade_router
 
 # Import API routers
 from backend.api.routers.auth import router as auth_router
+from backend.api.routers.decks import router as decks_router
 from backend.api.routers.profiles import router as profiles_router
+from backend.api.routers.rehearsals import router as rehearsals_router
 from backend.api.routers.sessions import router as sessions_router
 from backend.api.routers.system import router as system_router
 from backend.api.routers.tts import router as tts_router
@@ -52,6 +56,18 @@ async def lifespan(app: FastAPI):
     migrated = await migrate_legacy_encryption()
     if migrated:
         print(f"[Security] Re-encrypted {migrated} provider key(s) with the new secret key.")
+
+    from backend.rehearsals.privacy import sweep_recordings
+    await sweep_recordings()
+
+    async def retention_loop():
+        while True:
+            await asyncio.sleep(6 * 3600)
+            try:
+                await sweep_recordings()
+            except Exception as e:  # never let housekeeping take the server down
+                print(f"[Privacy] Retention sweep failed: {e}")
+    retention_task = asyncio.create_task(retention_loop())
 
     # 2. Check Owner Configuration (from Muse)
     owner_service.reset_cache()
@@ -87,6 +103,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    retention_task.cancel()
     print("[Shutdown] AI Pitch Coach shutting down.")
 
 
@@ -110,6 +127,9 @@ app.add_middleware(
 # Register REST Routers
 app.include_router(auth_router)
 app.include_router(profiles_router)
+app.include_router(decks_router)
+app.include_router(rehearsals_router)
+app.include_router(arcade_router)
 app.include_router(ai_router)
 app.include_router(sessions_router)
 app.include_router(tts_router)

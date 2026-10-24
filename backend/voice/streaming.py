@@ -42,7 +42,7 @@ def pcm_to_wav(pcm: bytes, sample_rate: int = SAMPLE_RATE) -> bytes:
     return buf.getvalue()
 
 
-async def _default_transcriber(wav: bytes, context: str) -> TranscriptionResult:
+async def default_transcriber(wav: bytes, context: str) -> TranscriptionResult:
     return await async_transcribe_detailed(wav, verbatim=True, context=context)
 
 
@@ -58,13 +58,13 @@ class StreamingTranscriber:
     def __init__(
         self,
         on_chunk: Optional[Callable[[ChunkResult], Awaitable[None]]] = None,
-        transcriber: Transcriber = _default_transcriber,
+        transcriber: Optional[Transcriber] = None,
         sample_rate: int = SAMPLE_RATE,
     ):
         self.sample_rate = sample_rate
         self.frame = sample_rate // 50
         self.on_chunk = on_chunk
-        self.transcriber = transcriber
+        self._transcriber = transcriber
         self.samples = np.zeros(0, dtype=np.int16)  # whole take, kept for the final analysis
         self.levels: List[float] = []  # dBFS per 20 ms frame
         self.chunk_start = 0  # frame index
@@ -132,7 +132,8 @@ class StreamingTranscriber:
         while not self._queue.empty():
             start_s, end_s, pcm = await self._queue.get()
             try:
-                result = await self.transcriber(pcm_to_wav(pcm, self.sample_rate), self._context)
+                transcribe = self._transcriber or default_transcriber
+                result = await transcribe(pcm_to_wav(pcm, self.sample_rate), self._context)
             except Exception as e:  # one bad chunk must not end the take
                 logger.warning(f"[stream] chunk {start_s:.1f}-{end_s:.1f}s failed: {e}")
                 continue

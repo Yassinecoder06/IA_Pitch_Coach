@@ -59,3 +59,68 @@ body {
 .animate-pulse-ring {
   animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Chart tokens (validated: dark categorical slots 1-3 on #0b0a10, all six checks pass). */
+:root {
+  --viz-surface: #0b0a10;
+  --viz-text: #f0efec;
+  --viz-text-2: #c3c2b7;
+  --viz-muted: #8a8980;
+  --viz-grid: rgba(255, 255, 255, 0.08);
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+  --viz-series-3: #199e70;
+}
+@media print {
+  :root {
+    --viz-surface: #ffffff;
+    --viz-text: #0b0b0b;
+    --viz-text-2: #52514e;
+    --viz-muted: #6b6a66;
+    --viz-grid: rgba(0, 0, 0, 0.1);
+    --viz-series-1: #2a78d6;
+    --viz-series-2: #eb6834;
+    --viz-series-3: #1baf7a;
+  }
+}
+
+/* Printable report ("paper"): light theme on screen and in print. Chart marks keep their colour. */
+.paper {
+  --viz-surface: #ffffff;
+  --viz-text: #0b0b0b;
+  --viz-text-2: #52514e;
+  --viz-muted: #6b6a66;
+  --viz-grid: rgba(0, 0, 0, 0.1);
+  --viz-series-1: #2a78d6;
+  --viz-series-2: #eb6834;
+  --viz-series-3: #1baf7a;
+  background: #ffffff;
+  color: #111111;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.paper *:not([data-viz]) {
+  color: #1a1a1a !important;
+  background-color: transparent !important;
+  border-color: #dddddd !important;
+  box-shadow: none !important;
+}
+.paper section,
+.paper header {
+  break-inside: avoid;
+}
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  html,
+  body,
+  #root {
+    background: #ffffff !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

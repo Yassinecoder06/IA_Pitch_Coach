@@ -14,8 +14,21 @@ export function chromeArgs(video?: 'portrait' | 'pose'): string[] {
     '--use-fake-device-for-media-stream',
     `--use-file-for-fake-audio-capture=${path.join(E2E_DIR, 'pitch.wav')}%noloop`,
     ...(video ? [`--use-file-for-fake-video-capture=${path.join(E2E_DIR, `${video}.y4m`)}`] : []),
-    '--enable-unsafe-swiftshader', // WebGL in headless Chrome for the GPU delegate
+    // E2E_GPU=1 uses the real GPU (ANGLE/EGL); otherwise WebGL falls back to SwiftShader in headless Chrome.
+    ...(process.env.E2E_GPU ? ['--ignore-gpu-blocklist', '--enable-gpu', '--use-gl=angle', '--use-angle=gl-egl'] : ['--enable-unsafe-swiftshader']),
   ];
+}
+
+/** With E2E_GPU=1 on a hybrid-graphics laptop, PRIME offload puts Chrome's WebGL on the NVIDIA GPU. */
+export function chromeEnv(): Record<string, string> {
+  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
+  if (!process.env.E2E_GPU) return env;
+  return {
+    ...env,
+    __NV_PRIME_RENDER_OFFLOAD: '1',
+    __GLX_VENDOR_LIBRARY_NAME: 'nvidia',
+    __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json',
+  };
 }
 
 export default defineConfig({
@@ -34,6 +47,6 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     permissions: ['microphone', 'camera'],
-    launchOptions: { args: chromeArgs() },
+    launchOptions: { args: chromeArgs(), env: chromeEnv() },
   },
 });

@@ -1,0 +1,53 @@
+{
+  "_comment": "Word-choice coaching lexicon. Hedging/vague/apology and plain-English entries are adapted from iamspeaker (MIT, (c) 2026 Seung Park); see THIRD_PARTY_NOTICES.md.",
+  "risk": [
+    {"tokens": ["i", "think"], "category": "hedge", "tip": "State the claim directly, or back it with a number."},
+    {"tokens": ["i", "guess"], "category": "hedge", "tip": "State the claim directly."},
+    {"tokens": ["i", "believe"], "category": "hedge", "tip": "Replace belief with evidence: data, a customer quote, a result."},
+    {"tokens": ["i", "feel", "like"], "category": "hedge", "tip": "State the claim directly."},
+    {"tokens": ["i", "would", "say"], "category": "hedge", "tip": "Say it: drop the cushion."},
+    {"tokens": ["we", "hope"], "category": "hedge", "tip": "Replace hope with a plan or a milestone."},
+    {"tokens": ["i", "hope"], "category": "hedge", "tip": "Replace hope with a plan or a milestone."},
+    {"tokens": ["sort", "of"], "category": "hedge", "tip": "Be precise."},
+    {"tokens": ["kind", "of"], "category": "hedge", "tip": "Be precise."},
+    {"tokens": ["a", "little", "bit"], "category": "hedge", "tip": "Be precise."},
+    {"tokens": ["more", "or", "less"], "category": "hedge", "tip": "Give the actual number."},
+    {"tokens": ["maybe"], "category": "hedge", "tip": "Commit: say what you will do."},
+    {"tokens": ["perhaps"], "category": "hedge", "tip": "Commit: say what you will do."},
+    {"tokens": ["probably"], "category": "hedge", "tip": "Back it with evidence or drop it."},
+    {"tokens": ["possibly"], "category": "hedge", "tip": "Back it with evidence or drop it."},
+    {"tokens": ["hopefully"], "category": "hedge", "tip": "Replace hope with a plan."},
+    {"tokens": ["somewhat"], "category": "hedge", "tip": "Be precise."},
+    {"tokens": ["stuff"], "category": "vague", "tip": "Name the specific thing."},
+    {"tokens": ["things"], "category": "vague", "tip": "Name the specific things."},
+    {"tokens": ["a", "lot", "of"], "category": "vague", "tip": "Quantify: how many?"},
+    {"tokens": ["a", "bunch", "of"], "category": "vague", "tip": "Quantify: how many?"},
+    {"tokens": ["or", "something"], "category": "vague", "tip": "Name it precisely."},
+    {"tokens": ["and", "so", "on"], "category": "vague", "tip": "List the items that matter, then stop."},
+    {"tokens": ["very", "good"], "category": "vague", "tip": "Say what makes it good, with a number."},
+    {"tokens": ["sorry"], "category": "apology", "tip": "Own the room: skip the apology."},
+    {"tokens": ["i'm", "not", "sure"], "category": "apology", "tip": "Say what you do know, and when you will know the rest."},
+    {"tokens": ["i'm", "no", "expert"], "category": "apology", "tip": "Own your expertise."},
+    {"tokens": ["if", "that", "makes", "sense"], "category": "apology", "tip": "Check understanding with a question to the audience instead."}
+  ],
+  "plain_english": {
+    "utilize": "use", "leverage": "use", "facilitate": "help", "endeavor": "try", "ascertain": "find out",
+    "commence": "start", "terminate": "end", "subsequently": "later", "furthermore": "also", "moreover": "also",
+    "nevertheless": "still", "paradigm": "model", "synergy": "teamwork", "ubiquitous": "everywhere",
+    "myriad": "many", "plethora": "plenty", "aforementioned": "earlier", "methodology": "method",
+    "optimal": "best", "holistic": "overall", "pertaining": "about", "numerous": "many",
+    "approximately": "about", "sufficient": "enough", "consequently": "so", "predominantly": "mostly",
+    "substantial": "large"
+  },
+  "weak_verbs": {
+    "get": "win, earn, reach", "got": "won, earned, reached", "make": "build, create, cut", "made": "built, created, cut",
+    "do": "run, deliver, ship", "did": "ran, delivered, shipped", "try": "test, launch", "trying": "testing, launching",
+    "help": "enable, cut, save", "helps": "enables, cuts, saves"
+  },
+  "be_verbs": ["is", "are", "was", "were", "be", "been", "being"],
+  "stopwords": ["the", "a", "an", "and", "or", "but", "to", "of", "in", "on", "for", "with", "we", "our", "us", "you", "your",
+    "it", "its", "it's", "is", "are", "was", "were", "be", "that", "this", "these", "those", "they", "them", "their",
+    "i", "me", "my", "so", "as", "at", "by", "from", "have", "has", "had", "do", "does", "did", "not", "can", "will",
+    "just", "about", "what", "which", "who", "how", "if", "then", "than", "there", "here", "all", "one", "um", "uh",
+    "like", "also", "more", "very", "really", "into", "out", "up", "now", "when", "because"]
+}

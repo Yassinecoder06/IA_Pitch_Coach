@@ -68,7 +68,6 @@ export interface SensorOptions {
   onFrame?: (frame: SensorFrame) => void;
 }
 
-const BUDGET_MS = 25; // per-frame inference budget before the pump slows down
 const FAST_INTERVAL = 1000 / 15;
 const SLOW_INTERVAL = 1000 / 8;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
@@ -144,8 +143,9 @@ export class SensorSession {
     this.resultTimes.push(now);
     while (this.resultTimes.length && this.resultTimes[0] < now - 2000) this.resultTimes.shift();
 
-    // Performance budget: sustained over-budget inference drops the frame rate.
-    this.overBudget = msg.inferenceMs > BUDGET_MS ? this.overBudget + 1 : 0;
+    // Performance budget: inference runs in the worker, so it only has to keep up with the
+    // frame interval. Sustained use of more than 80% of the interval drops to the slow rate.
+    this.overBudget = msg.inferenceMs > this.interval * 0.8 ? this.overBudget + 1 : 0;
     if (this.overBudget >= 30 && this.interval === FAST_INTERVAL) {
       this.interval = SLOW_INTERVAL;
       this.schedulePump();

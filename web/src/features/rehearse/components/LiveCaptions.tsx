@@ -1,11 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { useSensors } from '@/stores/sensors';
 import { segmentFillers } from '@/lib/fillers';
+import { joinWords } from '@/lib/words';
 
 export function LiveCaptions({ placeholder = 'Start speaking: your words appear here a moment after each pause.' }: { placeholder?: string }) {
   const words = useSensors(s => s.words);
   const endRef = useRef<HTMLDivElement | null>(null);
-  const text = words.map(w => w.w).join(' ');
+  const text = joinWords(words);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'nearest' });

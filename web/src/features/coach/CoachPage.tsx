@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { SessionSidebar } from './SessionSidebar';
 import { PitchWorkspace } from './PitchWorkspace';
 import { PitchInsights } from './PitchInsights';
@@ -52,6 +53,8 @@ export function CoachPage() {
   const activeSessionRef = useRef<string | null>(null);
   const streamRef = useRef('');
   const playAudio = useAudioQueue();
+  const [params] = useSearchParams();
+  const requestedSession = params.get('session');
 
   useEffect(() => {
     activeSessionRef.current = activeSessionId;
@@ -78,10 +81,11 @@ export function CoachPage() {
       .listSessions()
       .then(res => {
         setSessions(res.sessions);
-        if (res.sessions.length > 0) void selectSession(res.sessions[0].id);
+        const wanted = res.sessions.find(s => s.id === requestedSession) ?? res.sessions[0];
+        if (wanted) void selectSession(wanted.id);
       })
       .catch(console.error);
-  }, [selectSession]);
+  }, [selectSession, requestedSession]);
 
   // One socket for the page; handlers read refs so they never go stale.
   useEffect(() => {

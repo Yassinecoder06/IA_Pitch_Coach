@@ -1,176 +1,111 @@
-# 🚀 AI Pitch Coach (SOTA Edition)
+# AI Pitch Coach
 
-<div align="center">
+A private, local-first rehearsal studio for founders and speakers. Rehearse a deck slide by slide while your
+camera and microphone are analysed **on your own machine**, then get a full report: pace, fillers, pauses,
+vocal variety, upspeak, eye contact, posture, word choice, per-slide timing and AI coaching from the model of
+your choice. Track progress across attempts, compare takes, set goals, export a PDF, and drill specific
+habits in the training arcade.
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688.svg?style=flat&logo=fastapi)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-18/19-61DAFB.svg?style=flat&logo=react)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-3178C6.svg?style=flat&logo=typescript)](https://www.typescriptlang.org)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4+-38B2AC.svg?style=flat&logo=tailwind-css)](https://tailwindcss.com)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?style=flat&logo=docker)](https://www.docker.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+## What it does
 
-**A real-time, voice-first AI startup pitch coaching platform with multi-AI provider orchestration, local-first owner security, and 6-dimensional SOTA scoring.**
+| Area | Features |
+|---|---|
+| **Coach** | Voice or text pitch turns; 8 coaching modes (pitch analysis, investor Q&A, objection handling...); streamed feedback; structured 6-dimension scorecard |
+| **Live practice** | Live captions (local Whisper), eye contact, posture, fidgeting, sway, pitch range, energy, pace and fillers on a heads-up display |
+| **Decks** | Upload PDF or PPTX (speaker notes kept), write an outline, or generate a pitch deck with AI; slide critique; export to PPTX |
+| **Rehearsal Studio** | Presenter view with current/next slide, teleprompter notes, per-slide and total timers, keyboard navigation |
+| **Report** | Overall, delivery and content scores; 11 delivery metrics; timeline synced to the recording; clickable transcript; slide-by-slide table; evidence-backed coaching notes; word-choice tips; rewrite of the weakest passage; one-click investor Q&A on your weak points |
+| **History** | Trends across attempts, best take, side-by-side comparison (deltas plus resolved/persisting/new issues), goals, printable PDF report |
+| **Arcade** | Filler Ninja, Pitch Surfer, Eye Lock, Stage Presence, Pace Racer, Pause Power; difficulties, personal bests, daily streak, a daily queue that targets your weakest metrics |
+| **Accounts** | One owner passphrase per install, plus local speaker profiles (optional 4-digit PIN), each with its own data |
+| **Bring your own AI** | OpenAI, Anthropic, Gemini, Ollama (local or cloud) and any OpenAI-compatible API; model per task (chat, scoring, deck generation, Q&A) with automatic fallback |
 
-[Features](#-key-features) • [Quick Start](#-quick-start) • [Architecture](#-architecture) • [Coaching Modes](#-coaching-modes) • [AI Providers](#-bring-your-own-ai) • [Docker](#-docker-deployment)
+## Privacy model
 
-</div>
+- **Camera frames never leave the browser.** MediaPipe face and pose models run in a Web Worker from files
+  served by this app (no CDN). Only numbers (eye-contact share, posture score...) are stored.
+- **Audio is transcribed locally** with faster-whisper. Recordings can be kept, auto-deleted after N days,
+  or not kept at all (Settings › Privacy).
+- **Only the transcript and measurements** go to an AI provider, and only to the one you configure. With
+  local Ollama nothing leaves the machine.
+- API keys are encrypted at rest (AES-GCM) with a random key generated on first run in `data/secret.key`.
+- The session is an HttpOnly, SameSite=Strict cookie; the WebSocket checks it and the page origin.
 
----
+## Quick start
 
-## 🌟 Key Features
-
-- **🎙️ Real-time Voice Pipeline:** Stream raw microphone audio over WebSockets with sub-second speech transcription via `faster-whisper` and natural voice synthesis with `Piper TTS`.
-- **🧠 Bring-Your-Own-AI (Inspired by Muse):** Input API keys directly in the UI for **OpenAI, Anthropic Claude, Google Gemini, Groq, DeepSeek, Mistral, OpenRouter, and local Ollama**. Automatically discover models and benchmark roundtrip latency with live tests.
-- **🛡️ Local-First Owner Gate:** Secure local authentication using **scrypt passphrase hashing**, one-time server setup codes, and signed HMAC session tokens. **Zero dependency on cloud auth or external services**.
-- **📊 6-Dimensional Radar Scorecard:** Evaluates pitches across **Clarity, Structure, Persuasion, Delivery, Confidence, and Relevance** with a real-time animated radar chart.
-- **📋 Pitch Structure Checklist:** Live automated detection of essential pitch components: **Hook, Problem, Solution, Market, Traction, and Ask**.
-- **🗣️ Speech Delivery & Rhythm Metrics:** Live computation of words-per-minute (WPM), pause frequency, strategic pause ratio, and **inline filler-word highlighting** (e.g., *um, uh, like, basically, you know*).
-- **⏱️ Timed Pitch Drills:** Built-in interactive timers for 60s Elevator Pitches, 3-minute Seed Pitches, and 5-minute Demo Day presentations.
-- **🔄 Turn Regeneration & History:** Rename sessions, edit previous pitch turns, and delete sessions with custom confirm dialogs.
-- **🐳 100% Dockerized:** One command (`docker compose up --build`) runs the entire stack with PostgreSQL, the FastAPI backend, and the compiled React frontend.
-
----
-
-## 📐 Architecture
-
-```mermaid
-flowchart TD
-  subgraph Frontend["React 19 + TypeScript + Vite + Tailwind Client"]
-    Gate[OwnerGate: Passphrase Unlock]
-    AIConfig[AI Providers Panel: UI Keys, Discovery, Fallbacks]
-    Workspace[Pitch Workspace: Mic Orb, Live Waveform]
-    TranscriptView[Transcript with Inline Filler Highlighting]
-    Scorecard[Radar Scorecard + Structure Checklist + Gauges]
-    DrillTimer[Timed Pitch Drills]
-  end
-
-  subgraph Backend["FastAPI Backend (Local-First)"]
-    Auth[Owner Auth: Scrypt Passphrase + HMAC Sessions]
-    Router[AI Provider Router: Multi-Provider + Fallback Cascade]
-    STT[faster-whisper STT + Async Worker Pool]
-    TTS[Piper TTS Streaming]
-    Metrics[Speech Metrics: WPM, Pauses, Fillers, Energy]
-    WS[WebSocket v2 Handler: Bidirectional Streaming]
-    Storage[Direct Database Engine: PostgreSQL / SQLite]
-  end
-
-  subgraph Persistence["Local Storage"]
-    DB[(PostgreSQL 16 / SQLite)]
-    Ollama[(Local Ollama)]
-  end
-
-  Gate --> Auth
-  AIConfig --> Router
-  Workspace --> WS
-  WS --> STT
-  WS --> Metrics
-  WS --> Router
-  WS --> TTS
-  Auth --> Storage
-  Storage --> DB
-  Router --> Ollama
-```
-
----
-
-## 🎯 Coaching Modes
-
-| Mode | Purpose | Scorecard | Default TTS |
-|------|---------|:---------:|:-----------:|
-| **Pitch Analysis** | Full assessment with 6D radar scorecard, structure checklist, and ranked fixes | ✅ Yes | ❌ No |
-| **Interactive Coaching** | Conversational turn-by-turn coaching with one high-impact tip per turn | ❌ No | ✅ Yes |
-| **Investor Q&A** | Probes problem/solution fit, unit economics, market size, and defensibility | ✅ Yes | ✅ Yes |
-| **Delivery & Vocal Coaching** | Focuses on speaking cadence, pauses, vocal confidence, and filler reduction | ✅ Yes | ✅ Yes |
-| **Objection Handling** | Prepares speakers for investor skepticism and aggressive pushback | ❌ No | ✅ Yes |
-| **Pitch Polish & Rewrite** | Rewrites your pitch to lead with urgency, pain points, and memorable metrics | ❌ No | ❌ No |
-| **Market & Competitor Intel** | Contextualizes your pitch against market benchmarks and competitor dynamics | ❌ No | ❌ No |
-| **Freeform Conversation** | Warm-up sparring partner for general speaking practice and communication confidence | ❌ No | ✅ Yes |
-
----
-
-## 🚀 Quick Start
-
-### Option 1: Docker (Recommended)
-
-Run the complete self-contained stack with PostgreSQL:
+### Docker
 
 ```bash
 docker compose up --build
 ```
 
-Open **`http://localhost:8000`** in your browser. On your first run, check your terminal for the generated **Setup Code** (e.g. `QP4E-42FN`) to set your owner passphrase.
+Open http://localhost:8000. The first run prints a **setup code** in the logs; enter it with a passphrase to
+claim the install. The default image includes LibreOffice for PPTX import (`APP_TARGET=runtime` builds a
+smaller image without it).
 
----
+### Local
 
-### Option 2: Standalone Local Setup
+Requirements: Python 3.10+, Node 22, ffmpeg. Optional: LibreOffice (PPTX import), an NVIDIA GPU (Whisper on CUDA).
 
-#### 1. Requirements
-- Python 3.10+
-- Node.js 18+
-- A modern browser with microphone access
-
-#### 2. Install Backend Dependencies
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cd web && npm ci && npm run build && cd ..     # also downloads the MediaPipe models into web/public/mediapipe
+uvicorn backend.main:app --port 8000
 ```
 
-#### 3. Build the Frontend
-```bash
-cd web
-npm install
-npm run build
-cd ..
-```
+For development, `make dev` runs the API with reload and the Vite dev server on http://localhost:5173.
 
-#### 4. Launch the App
-```bash
-uvicorn backend.main:app --port 8000 --reload
-```
+### Configure AI
 
-Open **`http://localhost:8000`**. On first launch, the terminal will print:
-```text
-#################################################################
-  FIRST-RUN SETUP CODE (CLAIM YOUR LOCAL PITCH COACH):
-  >>>  QP4E-42FN  <<<
-  Enter this code in your browser to set your owner passphrase.
-#################################################################
-```
+Settings › AI providers: add a provider and key, pick a primary model, optional fallbacks, and optionally a
+different model per task. Without any provider, the app uses a local Ollama at `OLLAMA_ENDPOINT` if one is
+running. Every measured part of the report works without AI; only the written feedback needs a model.
 
----
+### Useful settings (`.env`)
 
-## 🧠 Bring-Your-Own-AI
+| Variable | Default | |
+|---|---|---|
+| `DATABASE_URL` | `sqlite:///data/pitch_coach.db` | or `postgresql://user:pw@host/db` |
+| `SECRET_KEY` | generated into `data/secret.key` | set explicitly to share between replicas |
+| `WHISPER_MODEL_SIZE` / `WHISPER_DEVICE` | `tiny.en` / `cpu` | e.g. `medium.en` / `cuda` |
+| `SECURE_COOKIES` | `false` | `true` when served over HTTPS |
+| `CORS_ORIGINS` | Vite dev origins | |
 
-Click the **Settings** gear icon in the sidebar to open the **AI Providers Panel**:
+Forgot the passphrase? `python -m backend.cli reset-owner`, then restart for a new setup code (data and API
+keys are kept).
 
-1. **Add Provider:** Choose from **OpenAI, Anthropic Claude, Google Gemini, Groq, DeepSeek, Mistral, OpenRouter, or Ollama**.
-2. **Enter API Key:** Masked and securely encrypted in local storage with AES-256-GCM.
-3. **Fetch Models:** One click queries the provider's `/v1/models` endpoint and populates available models.
-4. **Test Latency:** Click **Test** to measure response time and verify connectivity in real-time.
-5. **Fallback Cascade:** Configure an automated fallback order so your coaching session never fails if an API experiences rate limits.
-
----
-
-## 🧪 Running Automated Tests
-
-Run the full pytest suite:
+## Testing
 
 ```bash
-make test
-# Or directly:
-pytest tests/ -v
+make test        # backend unit/integration tests (SQLite; set TEST_POSTGRES_URL to run them on PostgreSQL)
+make test-web    # typecheck, lint, vitest
+make test-live   # real provider calls; needs GEMINI_API_KEY and/or OLLAMA_API_KEY
+make e2e         # Playwright + Chrome against the real backend, with fake camera/microphone input
 ```
 
-All 10 unit tests cover:
-- Owner authentication & setup code security
-- Session persistence & cascade deletion
-- 6-dimensional scorecard parsing & fallback regex extraction
-- Filler word and phrase detection
-- REST API lifecycle endpoints
+The end-to-end suite feeds Chrome a Piper-voiced pitch as the microphone and MediaPipe's own test images as
+the camera, so speech recognition, eye contact and posture are checked on real models. `E2E_GPU=1` runs
+browser vision on an NVIDIA GPU (PRIME offload on hybrid laptops).
 
----
+## Architecture
 
-## 📜 License
+```
+Browser                                              FastAPI (local)
+  AudioWorklet → 16 kHz PCM16 ── binary WebSocket ─▶ chunked Whisper (word timestamps) → live captions
+  YIN pitch / energy / pauses                        analysis: pace, pauses, fillers, pYIN prosody,
+  MediaPipe worker → gaze, posture, motion           upspeak, word choice, clarity, per-slide segments,
+  pdf.js renders uploaded decks                      cues → LLM judge (structured output, cited evidence)
+  React 18 · router · TanStack Query · zustand ◀REST  SQLAlchemy 2 + Alembic (SQLite or PostgreSQL)
+                                                     LLM router: per-task model, fallback, cooldown
+```
 
-MIT License. Designed and built for startup founders, speakers, and innovators worldwide.
+- `backend/analysis/` delivery analysis (pure functions), `backend/rehearsals/` lifecycle, compare, goals,
+  privacy, `backend/decks/` decks, `backend/llm/` providers and router, `backend/db/` models and migrations
+- `web/src/lib/sensors/` browser sensors, `web/src/features/` one folder per screen
+- `shared/` data used by both sides (filler rules, word-choice lexicon), with parity tests
+
+## License
+
+MIT. Third-party notices, including code and data adapted from iamspeaker (MIT), are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

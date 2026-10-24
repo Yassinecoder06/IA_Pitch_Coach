@@ -96,6 +96,7 @@ async def handle_websocket_connection(websocket: WebSocket) -> None:
     mode = "pitch_analysis"
     model_ref: Optional[str] = None
     session_id: Optional[str] = None
+    session_context: str = ""
     conversation_history: List[Dict[str, str]] = []
     latest_assistant_response: str = ""
 
@@ -132,12 +133,15 @@ async def handle_websocket_connection(websocket: WebSocket) -> None:
                 if "session_id" in msg:
                     requested = msg["session_id"]
                     # Only bind to sessions owned by the active profile
-                    if requested and await session_repository.get_session(requested, profile_id):
+                    session_row = await session_repository.get_session(requested, profile_id) if requested else None
+                    if session_row:
                         session_id = requested
+                        session_context = session_row.get("context_md") or ""
                         recent = await session_repository.get_recent_messages(session_id, profile_id, limit=20)
                         conversation_history = [{"role": m["role"], "content": m["content"]} for m in recent]
                     else:
                         session_id = None
+                        session_context = ""
                         conversation_history = []
 
                 await websocket.send_json({
@@ -208,7 +212,8 @@ async def handle_websocket_connection(websocket: WebSocket) -> None:
                     speech_metrics=metrics,
                     model_ref=model_ref,
                     profile_id=profile_id,
-                    session_id=session_id
+                    session_id=session_id,
+                    context_md=session_context,
                 )
 
             elif msg_type == "text":
@@ -244,7 +249,8 @@ async def handle_websocket_connection(websocket: WebSocket) -> None:
                     speech_metrics=metrics,
                     model_ref=model_ref,
                     profile_id=profile_id,
-                    session_id=session_id
+                    session_id=session_id,
+                    context_md=session_context,
                 )
 
             elif msg_type == "read_aloud":
@@ -272,7 +278,8 @@ async def _run_coaching_turn(
     speech_metrics: Dict,
     model_ref: Optional[str],
     profile_id: str,
-    session_id: Optional[str]
+    session_id: Optional[str],
+    context_md: str = "",
 ) -> str:
     await websocket.send_json({"type": "status", "message": "AI Coach is analyzing..."})
 
@@ -283,6 +290,7 @@ async def _run_coaching_turn(
             mode=mode,
             conversation_history=conversation_history,
             speech_metrics=speech_metrics,
+            context_md=context_md or None,
             model_ref=model_ref,
         ):
             full_response += chunk

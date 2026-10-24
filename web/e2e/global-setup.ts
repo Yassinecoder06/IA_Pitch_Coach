@@ -16,6 +16,16 @@ export const PITCH_TEXT =
 
 /** Boots the real backend on a scratch database and records the printed setup code. */
 export default async function globalSetup() {
+  // A server left over from an interrupted run would answer instead of the fresh one.
+  const stalePid = path.join(E2E_DIR, 'server.pid');
+  if (fs.existsSync(stalePid)) {
+    try {
+      process.kill(Number(fs.readFileSync(stalePid, 'utf8')), 'SIGTERM');
+      await new Promise(r => setTimeout(r, 1500));
+    } catch {
+      /* not running */
+    }
+  }
   fs.rmSync(E2E_DIR, { recursive: true, force: true });
   fs.mkdirSync(E2E_DIR, { recursive: true });
 
@@ -24,6 +34,8 @@ export default async function globalSetup() {
     cwd: ROOT,
     stdio: 'inherit',
   });
+
+  execFileSync(PYTHON, ['-I', path.join(HERE, 'make_deck.py'), E2E_DIR], { cwd: ROOT, stdio: 'inherit' });
 
   // Fake-camera clips from MediaPipe's own test images (downloaded, never committed).
   for (const name of ['portrait', 'pose']) {
@@ -65,12 +77,14 @@ export default async function globalSetup() {
     const onData = (chunk: Buffer) => {
       out += chunk.toString();
       const m = out.match(/>>>\s+([A-Z0-9]{4}-[A-Z0-9]{4})\s+<<</);
-      if (m && out.includes('[Ready]')) {
+      // "Uvicorn running on" is printed only after the port is bound; "[Ready]" comes earlier.
+      if (m && out.includes('Uvicorn running on')) {
         clearTimeout(timer);
         resolve(m[1]);
       }
     };
     server.stdout.on('data', onData);
+    server.stderr.on('data', onData); // uvicorn logs to stderr
     server.on('exit', c => reject(new Error(`Backend exited with ${c}:\n${out}`)));
   });
   fs.writeFileSync(path.join(E2E_DIR, 'setup-code.txt'), code);

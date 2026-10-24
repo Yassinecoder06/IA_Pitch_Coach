@@ -4,6 +4,7 @@ import { Check, KeyRound, Trash2 } from 'lucide-react';
 import { AiProvidersPanel } from './AiProvidersPanel';
 import { ProfileAvatar, PROFILE_COLORS } from '@/features/profiles/ProfileGate';
 import { api } from '@/lib/api';
+import { rehearsalsApi, type PrivacySettings } from '@/lib/rehearsals';
 import type { Profile } from '@/lib/types';
 import { useAuth } from '@/stores/auth';
 import { toast } from '@/stores/toast';
@@ -12,6 +13,7 @@ const TABS = [
   { to: 'ai', label: 'AI providers' },
   { to: 'profiles', label: 'Profiles' },
   { to: 'security', label: 'Security' },
+  { to: 'privacy', label: 'Privacy' },
 ];
 
 export function SettingsPage() {
@@ -40,6 +42,7 @@ export function SettingsPage() {
           <Route path="ai" element={<AiProvidersPanel />} />
           <Route path="profiles" element={<ProfilesSettings />} />
           <Route path="security" element={<SecuritySettings />} />
+          <Route path="privacy" element={<PrivacySettingsPanel />} />
         </Routes>
       </div>
     </div>
@@ -236,5 +239,57 @@ function SecuritySettings() {
         Forgot it? Run <code className="text-neutral-300">python -m backend.cli reset-owner</code> on the server, then restart it.
       </p>
     </form>
+  );
+}
+
+function PrivacySettingsPanel() {
+  const [p, setP] = useState<PrivacySettings | null>(null);
+  useEffect(() => {
+    rehearsalsApi.privacy().then(setP).catch(e => toast(e.message, 'error'));
+  }, []);
+  if (!p) return null;
+
+  async function save(next: PrivacySettings) {
+    const previous = p;
+    setP(next); // optimistic: the control reflects the click immediately
+    try {
+      setP(await rehearsalsApi.savePrivacy(next));
+      toast('Privacy settings saved.');
+    } catch (e: any) {
+      setP(previous);
+      toast(e.message, 'error');
+    }
+  }
+
+  return (
+    <div className="glass-card max-w-lg space-y-4 rounded-2xl p-5 text-sm">
+      <p className="text-neutral-400">
+        Everything stays on this machine. Camera frames are analysed in your browser and never stored or sent; only numbers
+        (eye contact, posture) are kept. Audio is transcribed by your local Whisper.
+      </p>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={p.keep_recordings} onChange={e => save({ ...p, keep_recordings: e.target.checked })} />
+        Keep audio recordings of rehearsals (for playback and re-analysis)
+      </label>
+      {p.keep_recordings && (
+        <label className="flex items-center gap-2">
+          Delete recordings after
+          <select
+            value={p.recording_retention_days ?? ''}
+            onChange={e => save({ ...p, recording_retention_days: e.target.value ? Number(e.target.value) : null })}
+            className="rounded-lg border border-white/10 bg-neutral-900 px-2 py-1"
+            aria-label="Recording retention"
+          >
+            <option value="">never</option>
+            {[7, 30, 90, 365].map(d => (
+              <option key={d} value={d}>
+                {d} days
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <p className="text-xs text-neutral-500">Reports and transcripts are kept until you delete them. Turning recordings off deletes audio right after each analysis.</p>
+    </div>
   );
 }
