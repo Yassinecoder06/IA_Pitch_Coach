@@ -168,7 +168,7 @@ async def discover_models(
         if not models:
             if kind == "openai":
                 models = [
-                    ModelInfo(id="gpt-4o", label="GPT-4o (Omni SOTA)", capabilities=["chat"]),
+                    ModelInfo(id="gpt-4o", label="GPT-4o", capabilities=["chat"]),
                     ModelInfo(id="gpt-4o-mini", label="GPT-4o Mini (Fast & Smart)", capabilities=["chat"]),
                     ModelInfo(id="o1-mini", label="o1-mini (Reasoning)", capabilities=["chat"]),
                 ]

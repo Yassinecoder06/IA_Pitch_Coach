@@ -50,5 +50,5 @@ async def get_system_status():
 
 @router.get("/api/modes")
 async def list_modes():
-    """Returns the catalog of 8 SOTA coaching modes."""
+    """Returns the catalog of 8 coaching modes."""
     return {"modes": get_mode_catalog()}

@@ -47,7 +47,7 @@ from backend.ws.rehearsal import handle_rehearsal_connection
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle management."""
     print("\n" + "=" * 65)
-    print("AI Pitch Coach (SOTA Edition) - Starting Up")
+    print("AI Pitch Coach - Starting Up")
     print("=" * 65)
 
     # 1. Apply database migrations. A broken schema must stop startup, not limp along.
@@ -109,7 +109,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI application
 app = FastAPI(
-    title="AI Pitch Coach SOTA",
+    title="AI Pitch Coach",
     description="Real-time voice-first startup pitch coaching with multi-AI orchestration and local owner security.",
     version="3.0.0",
     lifespan=lifespan

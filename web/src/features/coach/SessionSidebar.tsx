@@ -62,7 +62,7 @@ export function SessionSidebar({
             </div>
             <div>
               <h1 className="text-sm font-bold tracking-tight text-white">AI Pitch Coach</h1>
-              <span className="text-[10px] text-purple-400 font-mono">SOTA Local Edition</span>
+              <span className="text-[10px] text-purple-400 font-mono">Local rehearsal studio</span>
             </div>
           </div>
         </div>

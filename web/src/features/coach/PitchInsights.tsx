@@ -21,7 +21,7 @@ export function PitchInsights({ scorecard, speechMetrics }: PitchInsightsProps) 
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-400 mb-4">
           <Award className="h-7 w-7" />
         </div>
-        <h3 className="text-base font-bold text-white">Live SOTA Insights</h3>
+        <h3 className="text-base font-bold text-white">Live Insights</h3>
         <p className="mt-2 text-xs text-neutral-400 leading-relaxed max-w-xs">
           Record or send a pitch turn. Real-time radar metrics, structure detection, and pacing analysis will appear here.
         </p>

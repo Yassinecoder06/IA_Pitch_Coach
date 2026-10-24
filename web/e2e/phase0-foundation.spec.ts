@@ -9,7 +9,7 @@ test('claim install, coach a typed pitch with a live model, get a structured sco
   await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
   await expect(page).toHaveURL(/\/coach$/);
   // Before any pitch the insights panel is empty: no placeholder score.
-  await expect(page.getByText('Live SOTA Insights')).toBeVisible();
+  await expect(page.getByText('Live Insights')).toBeVisible();
   await expect(page.getByTestId('overall-score')).toHaveCount(0);
 
   await configureProviders(page);

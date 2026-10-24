@@ -111,7 +111,7 @@ export function OwnerGate({ children }: { children: ReactNode }) {
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight">AI Pitch Coach</h1>
-              <span className="text-xs text-neutral-400">SOTA Local Edition</span>
+              <span className="text-xs text-neutral-400">Local rehearsal studio</span>
             </div>
           </div>
           <div className="rounded-full bg-purple-500/10 p-2 text-purple-400">
