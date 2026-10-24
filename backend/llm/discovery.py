@@ -119,7 +119,7 @@ async def discover_models(
             except Exception as e:
                 logger.warning(f"Gemini discovery failed: {e}")
         return [
-            ModelInfo(id="gemini-3.8-flash", label="Gemini 3.8 Flash"),
+            ModelInfo(id="gemini-3.5-flash", label="Gemini 3.5 Flash"),
             ModelInfo(id="gemini-3.5-flash-lite", label="Gemini 3.5 Flash Lite"),
             ModelInfo(id="gemini-3.1-pro-preview", label="Gemini 3.1 Pro Preview"),
         ]

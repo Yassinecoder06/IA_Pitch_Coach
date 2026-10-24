@@ -15,7 +15,7 @@ from tests.conftest import run
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 OLLAMA_KEY = os.environ.get("OLLAMA_API_KEY")
 OLLAMA_MODEL = os.environ.get("OLLAMA_CLOUD_MODEL", "beam")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
 PITCH = (
     "Um, so, we built FreightPilot. Small retailers overpay for shipping by about 30 percent "

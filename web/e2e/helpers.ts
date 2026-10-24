@@ -6,7 +6,7 @@ import { E2E_DIR } from '../playwright.config';
 export const PASSPHRASE = 'E2E-Passphrase-123';
 export const GEMINI_KEY = process.env.GEMINI_API_KEY;
 export const OLLAMA_KEY = process.env.OLLAMA_API_KEY;
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 export const OLLAMA_MODEL = process.env.OLLAMA_CLOUD_MODEL || 'beam';
 
 export const setupCode = () => fs.readFileSync(path.join(E2E_DIR, 'setup-code.txt'), 'utf8').trim();
