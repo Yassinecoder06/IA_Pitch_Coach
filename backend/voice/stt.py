@@ -204,7 +204,8 @@ class STTEngine:
         self,
         audio_data: bytes,
         language: Optional[str] = None,
-        verbatim: bool = True
+        verbatim: bool = True,
+        context: str = ""
     ) -> TranscriptionResult:
         """
         Transcribe audio data to text.
@@ -237,7 +238,7 @@ class STTEngine:
                     beam_size=5,
                     language=language or self.language,
                     word_timestamps=True,
-                    initial_prompt=VERBATIM_PROMPT if verbatim else None,
+                    initial_prompt=(VERBATIM_PROMPT + " " + context[-200:]).strip() if verbatim else (context[-200:] or None),
                     condition_on_previous_text=False,
                     vad_filter=True,
                     vad_parameters=dict(
@@ -337,8 +338,11 @@ async def async_transcribe_audio(audio_data: bytes, sample_rate: int = 16000) ->
     return await asyncio.to_thread(transcribe_audio, audio_data, sample_rate)
 
 
-async def async_transcribe_detailed(audio_data: bytes, verbatim: bool = True) -> TranscriptionResult:
-    """Full transcription result (segments and word timings) off the event loop thread."""
+async def async_transcribe_detailed(audio_data: bytes, verbatim: bool = True, context: str = "") -> TranscriptionResult:
+    """Full transcription result (segments and word timings) off the event loop thread.
+
+    `context` is the tail of the preceding transcript, so chunked transcription keeps continuity.
+    """
     import asyncio
-    return await asyncio.to_thread(get_engine().transcribe, audio_data, None, verbatim)
+    return await asyncio.to_thread(get_engine().transcribe, audio_data, None, verbatim, context)
 

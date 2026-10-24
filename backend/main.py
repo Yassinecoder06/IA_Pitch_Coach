@@ -36,6 +36,7 @@ from backend.storage.provider_repository import migrate_legacy_encryption
 from backend.voice.stt import load_model as load_stt_model
 from backend.voice.tts import preload_tts_model
 from backend.ws.coach import handle_websocket_connection
+from backend.ws.rehearsal import handle_rehearsal_connection
 
 
 @asynccontextmanager
@@ -119,6 +120,11 @@ app.include_router(system_router)
 @app.websocket("/ws")
 async def websocket_route(websocket: WebSocket):
     await handle_websocket_connection(websocket)
+
+
+@app.websocket("/ws/rehearsal")
+async def rehearsal_websocket_route(websocket: WebSocket):
+    await handle_rehearsal_connection(websocket)
 
 
 # Mount Web Client (React Vite build)

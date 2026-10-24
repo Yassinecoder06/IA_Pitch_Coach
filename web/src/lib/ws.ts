@@ -95,6 +95,25 @@ export class CoachSocket {
     return true;
   }
 
+  /** Connects (if needed) and resolves once the socket is open. */
+  open(timeoutMs = 10000): Promise<void> {
+    this.connect();
+    if (this.status === 'open') return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        off();
+        reject(new Error('Could not connect to the server.'));
+      }, timeoutMs);
+      const off = this.onStatus(s => {
+        if (s === 'open') {
+          clearTimeout(timer);
+          off();
+          resolve();
+        }
+      });
+    });
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -113,3 +132,4 @@ export class CoachSocket {
 }
 
 export const coachSocket = new CoachSocket('/ws');
+export const rehearsalSocket = new CoachSocket('/ws/rehearsal');

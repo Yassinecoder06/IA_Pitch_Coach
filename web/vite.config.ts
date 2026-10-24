@@ -5,10 +5,15 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Data shared with the Python backend (filler rules, test cases).
+      '@shared': fileURLToPath(new URL('../shared', import.meta.url)),
+    },
   },
   server: {
     port: 5173,
+    fs: { allow: ['..'] },
     proxy: {
       '/api': { target: 'http://localhost:8000', changeOrigin: true },
       '/ws': { target: 'ws://localhost:8000', ws: true },

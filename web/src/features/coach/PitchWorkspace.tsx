@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { DrillTimer } from './DrillTimer';
 import { startPcmRecorder, type PcmRecorder } from '@/audio/pcmRecorder';
+import { segmentFillers } from '@/lib/fillers';
 import type { CoachingMode, Message, Scorecard, SpeechMetrics } from '@/lib/types';
 
 interface PitchWorkspaceProps {
@@ -29,21 +30,6 @@ interface PitchWorkspaceProps {
   activeScorecard: Scorecard | null;
   activeSpeechMetrics: SpeechMetrics | null;
 }
-
-const FILLER_SET = new Set([
-  'um',
-  'uh',
-  'like',
-  'basically',
-  'actually',
-  'literally',
-  'so',
-  'well',
-  'you know',
-  'i mean',
-  'kind of',
-  'sort of',
-]);
 
 export function PitchWorkspace({
   modes,
@@ -144,24 +130,21 @@ export function PitchWorkspace({
     setInputText('');
   }
 
-  // Highlight filler words inline in user speech
+  // Highlight filler words inline in user speech (same rules as the backend counter)
   function renderTranscript(text: string) {
-    const tokens = text.split(/(\s+)/);
-    return tokens.map((token, i) => {
-      const clean = token.toLowerCase().replace(/[^\w\s]/g, '');
-      if (FILLER_SET.has(clean)) {
-        return (
-          <span
-            key={i}
-            className="rounded bg-amber-500/20 px-1 py-0.5 text-amber-300 font-semibold underline decoration-amber-500/50"
-            title="Filler word"
-          >
-            {token}
-          </span>
-        );
-      }
-      return token;
-    });
+    return segmentFillers(text).map((seg, i) =>
+      seg.filler ? (
+        <span
+          key={i}
+          className="rounded bg-amber-500/20 px-1 py-0.5 text-amber-300 font-semibold underline decoration-amber-500/50"
+          title={`Filler: ${seg.filler}`}
+        >
+          {seg.text}
+        </span>
+      ) : (
+        <React.Fragment key={i}>{seg.text}</React.Fragment>
+      ),
+    );
   }
 
   const activeModeObj = modes.find(m => m.id === currentMode) || modes[0];

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
+  Activity,
   Gamepad2,
   History,
   Layers,
@@ -16,6 +17,7 @@ import { useToast } from '@/stores/toast';
 
 const NAV = [
   { to: '/coach', label: 'Coach', icon: MessagesSquare },
+  { to: '/practice', label: 'Practice', icon: Activity },
   { to: '/rehearse', label: 'Rehearse', icon: Presentation },
   { to: '/decks', label: 'Decks', icon: Layers },
   { to: '/history', label: 'History', icon: History },

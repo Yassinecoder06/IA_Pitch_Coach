@@ -4,6 +4,7 @@ import { OwnerGate } from '@/features/auth/OwnerGate';
 import { ProfileGate } from '@/features/profiles/ProfileGate';
 import { CoachPage } from '@/features/coach/CoachPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
+import { PracticePage } from '@/features/rehearse/PracticePage';
 import { Shell, ComingSoon } from './Shell';
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
           <Route element={<Shell />}>
             <Route index element={<Navigate to="/coach" replace />} />
             <Route path="/coach" element={<CoachPage />} />
+            <Route path="/practice" element={<PracticePage />} />
             <Route path="/rehearse/*" element={<ComingSoon title="Rehearsal Studio" />} />
             <Route path="/decks/*" element={<ComingSoon title="Decks" />} />
             <Route path="/history/*" element={<ComingSoon title="History" />} />

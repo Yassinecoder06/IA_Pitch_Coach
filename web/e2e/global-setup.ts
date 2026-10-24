@@ -25,6 +25,19 @@ export default async function globalSetup() {
     stdio: 'inherit',
   });
 
+  // Fake-camera clips from MediaPipe's own test images (downloaded, never committed).
+  for (const name of ['portrait', 'pose']) {
+    const jpg = path.join(E2E_DIR, `${name}.jpg`);
+    const res = await fetch(`https://storage.googleapis.com/mediapipe-assets/${name}.jpg`);
+    if (!res.ok) throw new Error(`Could not download ${name}.jpg (${res.status})`);
+    fs.writeFileSync(jpg, Buffer.from(await res.arrayBuffer()));
+    execFileSync('ffmpeg', [
+      '-loglevel', 'error', '-y', '-loop', '1', '-i', jpg, '-t', '6',
+      '-vf', 'scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2,fps=15',
+      '-pix_fmt', 'yuv420p', path.join(E2E_DIR, `${name}.y4m`),
+    ]);
+  }
+
   const server = spawn(
     path.join(ROOT, '.venv', 'bin', 'uvicorn'),
     ['backend.main:app', '--host', '127.0.0.1', '--port', String(E2E_PORT)],

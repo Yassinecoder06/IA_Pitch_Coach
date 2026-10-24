@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "prebuild": "node scripts/fetch-mediapipe.mjs",
+    "predev": "node scripts/fetch-mediapipe.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.18",
