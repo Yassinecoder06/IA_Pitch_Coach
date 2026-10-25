@@ -57,7 +57,8 @@ class ArcadeService:
             per[r.difficulty] = max(per.get(r.difficulty, 0.0), r.score)
 
         # Streak: consecutive days (ending today or yesterday) with at least one game or rehearsal.
-        days = sorted({r.created_at.date() for r in runs}, reverse=True)
+        # Days are local calendar days: created_at is UTC, date.today() is local.
+        days = sorted({r.created_at.astimezone().date() for r in runs}, reverse=True)
         streak, cursor = 0, date.today()
         if days and days[0] < cursor:
             cursor -= timedelta(days=1)
