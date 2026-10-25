@@ -1,0 +1,10 @@
+{
+  "_comment": "Single source of filler-word rules, read by backend/analysis/fillers.py and web/src/lib/fillers.ts. Both are tested against filler_cases.json.",
+  "always": ["um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "hmm", "mm", "mhm"],
+  "discourse": ["basically", "literally", "actually", "honestly"],
+  "phrases": [["you", "know"], ["i", "mean"], ["you", "see"], ["okay", "so"]],
+  "you_know_not_before": ["what", "how", "why", "where", "when", "who", "that", "it", "this", "the", "about", "if"],
+  "like_filler_after": ["was", "is", "are", "were", "it's", "i'm", "he's", "she's", "we're", "they're", "and", "but", "so", "just", "um", "uh", "basically", "literally", "actually"],
+  "like_not_after": ["i", "you", "we", "they", "would", "i'd", "we'd", "you'd", "they'd", "to", "look", "looks", "looked", "feel", "feels", "felt", "seem", "seems", "sound", "sounds", "something", "anything", "nothing", "things", "more", "much", "exactly", "not", "don't", "didn't", "do", "does"],
+  "sentence_markers": ["so", "well", "okay", "right"]
+}

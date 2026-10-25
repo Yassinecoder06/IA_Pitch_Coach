@@ -1,0 +1,15 @@
+[
+  {"text": "Um, so basically, our product is like super fast, you know?", "expected": {"um": 1, "so": 1, "basically": 1, "like": 1, "you know": 1}},
+  {"text": "We built an autonomous database optimization platform for enterprise Postgres.", "expected": {}},
+  {"text": "I'd like to show you what we built. It looks like a dashboard.", "expected": {}},
+  {"text": "Customers like it, and we would like more of them.", "expected": {}},
+  {"text": "So we raised two million dollars last year.", "expected": {}},
+  {"text": "So, uh, we raised money. Well, it was hard.", "expected": {"so": 1, "uh": 1, "well": 1}},
+  {"text": "This is the right market. It works, right?", "expected": {"right": 1}},
+  {"text": "Do you know what our users want? You know, speed.", "expected": {"you know": 1}},
+  {"text": "I mean, the margins are, like, really good.", "expected": {"i mean": 1, "like": 1}},
+  {"text": "It was like, wow. Umm we actually grew forty percent.", "expected": {"like": 1, "umm": 1, "actually": 1}},
+  {"text": "Okay so the ask is one million.", "expected": {"okay so": 1}},
+  {"text": "Things like pricing matter. We are literally sold out.", "expected": {"literally": 1}},
+  {"text": "Hmm. Er, erm, ah.", "expected": {"hmm": 1, "er": 1, "erm": 1, "ah": 1}}
+]

@@ -10,8 +10,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -56,9 +56,21 @@ pip-log.txt
 .env
 .env.local
 
+# Local data (database, recordings, generated secret.key)
+/data/
+
 # Docker
 docker/data/
 
 .ps
 
 summary.md
+test_cuda.py
+
+web/node_modules/
+web/dist/
+
+# Playwright
+web/test-results/
+web/playwright-report/
+web/public/mediapipe/

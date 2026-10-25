@@ -1,0 +1,17 @@
+# Never send secrets, local data or heavy local artefacts to the Docker daemon
+.env
+.env.*
+!.env.example
+data/
+models/
+.venv/
+venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.git/
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/public/mediapipe/

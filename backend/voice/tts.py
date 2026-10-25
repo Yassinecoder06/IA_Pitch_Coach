@@ -7,13 +7,13 @@ Optimized for low-resource machines with offline operation.
 
 import os
 import re
-import wave
-import tempfile
 import subprocess
 import sys
-from typing import Any, Optional, List, Tuple, AsyncGenerator
-from pathlib import Path
+import tempfile
+import wave
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, AsyncGenerator, List, Optional, Tuple
 from urllib.request import urlretrieve
 
 try:
@@ -204,7 +204,7 @@ class TTSEngine:
         try:
             model_path, config_path = self._get_voice_paths(voice_name)
             if model_path is None:
-                print(f"[TTS] Voice model not found")
+                print("[TTS] Voice model not found")
                 return False
 
             print(f"[TTS] Loading voice model: {model_path}")
@@ -342,6 +342,16 @@ def synthesize_speech(
         WAV audio bytes, or None on failure
     """
     return get_engine().synthesize(text, voice)
+
+
+async def async_synthesize_speech(
+    text: str,
+    voice: Optional[str] = None
+) -> Optional[bytes]:
+    """Asynchronously synthesize speech off the event loop thread."""
+    import asyncio
+    return await asyncio.to_thread(synthesize_speech, text, voice)
+
 
 
 def split_into_sentences(text: str) -> List[str]:

@@ -11,7 +11,7 @@ import numpy as np
 import soundfile as sf
 
 try:
-    from pyAudioAnalysis import audioBasicIO, ShortTermFeatures
+    from pyAudioAnalysis import ShortTermFeatures, audioBasicIO
 except Exception:  # pragma: no cover
     audioBasicIO = None  # type: ignore
     ShortTermFeatures = None  # type: ignore

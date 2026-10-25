@@ -5,11 +5,15 @@ Provides real-time speech transcription using faster-whisper.
 Optimized for low-resource machines with configurable model sizes.
 """
 
+import ctypes
+import importlib.util
 import os
+import sysconfig
 import tempfile
-from typing import Optional, Tuple, List
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 try:
     from faster_whisper import WhisperModel
@@ -24,6 +28,15 @@ class TranscriptionResult:
     confidence: float
     language: str
     segments: List[dict]
+    # Per-word timings: {"w": str, "start": s, "end": s, "prob": 0-1}
+    words: List[dict] = field(default_factory=list)
+    duration: float = 0.0
+
+
+# Whisper normally "cleans up" disfluencies. Priming it with a verbatim-style prompt keeps
+# fillers like "um" and "uh" in the transcript so they can be counted.
+VERBATIM_PROMPT = "Umm, so, uh, let me think, like, hmm... Okay, here's, um, what I'm, like, thinking."
+_transcribe_lock = threading.Lock()
 
 
 class STTEngine:
@@ -62,6 +75,83 @@ class STTEngine:
             return normalized
         return "int8"
 
+    @staticmethod
+    def _nvidia_library_dirs() -> List[Path]:
+        """Find CUDA shared-library directories installed by NVIDIA pip wheels."""
+        dirs: List[Path] = []
+
+        for package in ("nvidia.cuda_runtime.lib", "nvidia.cublas.lib", "nvidia.cudnn.lib"):
+            try:
+                spec = importlib.util.find_spec(package)
+            except ModuleNotFoundError:
+                spec = None
+            if spec and spec.submodule_search_locations:
+                dirs.extend(Path(path) for path in spec.submodule_search_locations)
+
+        purelib = Path(sysconfig.get_paths().get("purelib", ""))
+        nvidia_root = purelib / "nvidia"
+        if nvidia_root.exists():
+            dirs.extend(path for path in nvidia_root.glob("*/lib") if path.is_dir())
+
+        unique_dirs: List[Path] = []
+        seen = set()
+        for path in dirs:
+            resolved = path.resolve()
+            if resolved not in seen and resolved.exists():
+                unique_dirs.append(resolved)
+                seen.add(resolved)
+
+        return unique_dirs
+
+    @classmethod
+    def _prepare_cuda_libraries(cls) -> None:
+        """
+        Make CUDA libraries from pip wheels visible to CTranslate2.
+
+        CTranslate2 loads CUDA dependencies lazily, so model construction can
+        appear successful while the first transcription later fails with
+        "libcublas.so.12 is not found". Preloading the wheel libraries makes the
+        runtime behavior match startup.
+        """
+        lib_dirs = cls._nvidia_library_dirs()
+        if not lib_dirs:
+            print("[STT] Warning: CUDA requested, but no NVIDIA pip wheel library directories were found")
+            return
+
+        existing = os.environ.get("LD_LIBRARY_PATH", "")
+        existing_parts = [part for part in existing.split(os.pathsep) if part]
+        prepend_parts = [str(path) for path in lib_dirs if str(path) not in existing_parts]
+        if prepend_parts:
+            os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(prepend_parts + existing_parts)
+
+        libraries = (
+            "libcudart.so.12",
+            "libcublas.so.12",
+            "libcublasLt.so.12",
+            "libcudnn.so.9",
+            "libcudnn_ops.so.9",
+            "libcudnn_cnn.so.9",
+        )
+
+        loaded = []
+        missing = []
+        for library in libraries:
+            lib_path = next((path / library for path in lib_dirs if (path / library).exists()), None)
+            if lib_path is None:
+                missing.append(library)
+                continue
+
+            try:
+                ctypes.CDLL(str(lib_path), mode=ctypes.RTLD_GLOBAL)
+                loaded.append(library)
+            except OSError as exc:
+                print(f"[STT] Warning: failed to preload {library}: {exc}")
+
+        if loaded:
+            print(f"[STT] CUDA libraries ready: {', '.join(loaded)}")
+        if missing:
+            print(f"[STT] Warning: CUDA libraries not found in Python environment: {', '.join(missing)}")
+
     def load_model(self) -> bool:
         """
         Load the faster-whisper model.
@@ -89,6 +179,8 @@ class STTEngine:
         for device, compute_type in attempts:
             try:
                 print(f"[STT] Device: {device}, Compute type: {compute_type}")
+                if device == "cuda":
+                    self._prepare_cuda_libraries()
                 STTEngine._model = WhisperModel(
                     self.model_size,
                     device=device,
@@ -111,7 +203,9 @@ class STTEngine:
     def transcribe(
         self,
         audio_data: bytes,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        verbatim: bool = True,
+        context: str = ""
     ) -> TranscriptionResult:
         """
         Transcribe audio data to text.
@@ -138,23 +232,38 @@ class STTEngine:
             tmp_path = tmp_file.name
 
         try:
-            segments, info = STTEngine._model.transcribe(
-                tmp_path,
-                beam_size=5,
-                language=language or self.language,
-                vad_filter=True,
-                vad_parameters=dict(
-                    min_silence_duration_ms=500,
-                    speech_pad_ms=200
+            with _transcribe_lock:  # one transcription at a time on the shared model
+                segments, info = STTEngine._model.transcribe(
+                    tmp_path,
+                    beam_size=5,
+                    language=language or self.language,
+                    word_timestamps=True,
+                    initial_prompt=(VERBATIM_PROMPT + " " + context[-200:]).strip() if verbatim else (context[-200:] or None),
+                    condition_on_previous_text=False,
+                    vad_filter=True,
+                    vad_parameters=dict(
+                        min_silence_duration_ms=500,
+                        speech_pad_ms=200
+                    )
                 )
-            )
+                segments = list(segments)  # decoding is lazy; run it while holding the lock
 
             text_parts = []
             segment_data = []
+            words: List[dict] = []
             total_probability = 0.0
             segment_count = 0
 
             for segment in segments:
+                for w in segment.words or []:
+                    token = w.word.strip()
+                    if token:
+                        words.append({
+                            "w": token,
+                            "start": round(float(w.start), 3),
+                            "end": round(float(w.end), 3),
+                            "prob": round(float(w.probability), 3),
+                        })
                 text_parts.append(segment.text.strip())
                 segment_data.append({
                     "start": segment.start,
@@ -177,7 +286,9 @@ class STTEngine:
                 text=full_text,
                 confidence=avg_confidence,
                 language=info.language,
-                segments=segment_data
+                segments=segment_data,
+                words=words,
+                duration=float(getattr(info, "duration", 0.0) or 0.0),
             )
 
         finally:
@@ -219,3 +330,19 @@ def transcribe_audio(audio_data: bytes, sample_rate: int = 16000) -> Tuple[str, 
     """
     result = get_engine().transcribe(audio_data)
     return result.text, result.confidence
+
+
+async def async_transcribe_audio(audio_data: bytes, sample_rate: int = 16000) -> Tuple[str, float]:
+    """Asynchronously transcribe audio off the event loop thread."""
+    import asyncio
+    return await asyncio.to_thread(transcribe_audio, audio_data, sample_rate)
+
+
+async def async_transcribe_detailed(audio_data: bytes, verbatim: bool = True, context: str = "") -> TranscriptionResult:
+    """Full transcription result (segments and word timings) off the event loop thread.
+
+    `context` is the tail of the preceding transcript, so chunked transcription keeps continuity.
+    """
+    import asyncio
+    return await asyncio.to_thread(get_engine().transcribe, audio_data, None, verbatim, context)
+
