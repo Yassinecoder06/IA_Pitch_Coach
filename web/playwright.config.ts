@@ -7,8 +7,8 @@ import { defineConfig } from '@playwright/test';
 export const E2E_PORT = Number(process.env.E2E_PORT || 8765);
 export const E2E_DIR = path.resolve(HERE, 'test-results', 'e2e-runtime');
 
-/** Chrome flags for fake media; `video` names a clip prepared by global-setup (portrait | pose). */
-export function chromeArgs(video?: 'portrait' | 'pose'): string[] {
+/** Chrome flags for fake media; `video` names a clip prepared by global-setup (portrait | pose | switch). */
+export function chromeArgs(video?: 'portrait' | 'pose' | 'switch'): string[] {
   return [
     '--use-fake-ui-for-media-stream',
     '--use-fake-device-for-media-stream',

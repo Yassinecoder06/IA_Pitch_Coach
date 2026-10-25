@@ -1,7 +1,7 @@
 import { startPcmRecorder, PCM_SAMPLE_RATE, type PcmRecorder } from '@/audio/pcmRecorder';
 import { VoiceTracker, type VoiceSnapshot } from './audio/voiceTracker';
 import { GazeTracker, type GazeReading } from './vision/gaze';
-import { analysePosture, type PostureIssue, type PostureReading } from './vision/posture';
+import { analysePosture, PostureSmoother, type PostureIssue, type PostureReading } from './vision/posture';
 import { MotionTracker, type MotionReading } from './vision/motion';
 import type { FaceFrame, PoseFrame } from './vision/types';
 import type { VisionRequest, VisionResponse } from './vision/vision.worker';
@@ -78,6 +78,7 @@ export class SensorSession {
   readonly gaze = new GazeTracker();
   private voice = new VoiceTracker(PCM_SAMPLE_RATE);
   private motion = new MotionTracker();
+  private posture = new PostureSmoother();
   private recorder: PcmRecorder | null = null;
   private stream: MediaStream | null = null;
   private worker: Worker | null = null;
@@ -155,7 +156,7 @@ export class SensorSession {
     this.setVision({ fps: this.resultTimes.length / 2, inferenceMs: this.inferenceEma });
     if (msg.face !== undefined) this.emit({ gaze: this.gaze.update(msg.face, msg.t), face: msg.face });
     if (msg.pose !== undefined) {
-      this.emit({ posture: analysePosture(msg.pose), motion: this.motion.update(msg.pose, msg.t), pose: msg.pose });
+      this.emit({ posture: this.posture.update(analysePosture(msg.pose)), motion: this.motion.update(msg.pose, msg.t), pose: msg.pose });
     }
   }
 

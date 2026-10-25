@@ -50,6 +50,16 @@ export default async function globalSetup() {
     ]);
   }
 
+  // Speaker steps out of frame and comes back: 10 s portrait, then 6 s empty room (Chrome loops it).
+  execFileSync('ffmpeg', [
+    '-loglevel', 'error', '-y', '-loop', '1', '-t', '10', '-i', path.join(E2E_DIR, 'portrait.jpg'),
+    '-f', 'lavfi', '-i', 'color=c=0x303030:s=640x480:r=15:d=6',
+    '-filter_complex',
+    '[0:v]scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2,fps=15,format=yuv420p,setsar=1[a];' +
+      '[1:v]format=yuv420p,setsar=1[b];[a][b]concat=n=2:v=1[v]',
+    '-map', '[v]', '-pix_fmt', 'yuv420p', path.join(E2E_DIR, 'switch.y4m'),
+  ]);
+
   const server = spawn(
     path.join(ROOT, '.venv', 'bin', 'uvicorn'),
     ['backend.main:app', '--host', '127.0.0.1', '--port', String(E2E_PORT)],

@@ -57,13 +57,20 @@ export function analysePosture(pose: PoseFrame | null, baseline?: PostureBaselin
   const hipY = visible(lh, 0.3) && visible(rh, 0.3) ? (lh.y + rh.y) / 2 : mid.y + shoulderWidth * 1.6;
 
   if (lwVis && rwVis) {
-    // Crossed: each wrist sits on the opposite side of the body midline from its own shoulder,
-    // at chest/belly height.
     const side = (p: Landmark) => Math.sign(p.x - mid.x);
     const inTorso = (p: Landmark) => p.y > mid.y - shoulderWidth * 0.1 && p.y < hipY;
-    if (side(lw) === -side(ls!) && side(rw) === -side(rs!) && inTorso(lw) && inTorso(rw)) {
-      issues.push('arms_crossed');
-    }
+    // Crossed: each wrist sits on the opposite side of the body midline from its own shoulder...
+    const pastMidline = side(lw) === -side(ls!) && side(rw) === -side(rs!);
+    // ...or, as the model usually reports it (the hands are hidden under the opposite arm), both
+    // forearms run inward and level from elbows at the sides, ending near the midline. Clasped
+    // hands differ: the wrists hang below the elbows.
+    const folded = (wrist: Landmark, elbow: Landmark | undefined, shoulder: Landmark) =>
+      visible(elbow, 0.3) &&
+      side(shoulder) * (elbow!.x - wrist.x) > shoulderWidth * 0.4 &&
+      Math.abs(wrist.x - mid.x) < shoulderWidth * 0.6 &&
+      wrist.y < elbow!.y + shoulderWidth * 0.25;
+    const bothFolded = folded(lw, lm[POSE.leftElbow], ls!) && folded(rw, lm[POSE.rightElbow], rs!);
+    if ((pastMidline || bothFolded) && inTorso(lw) && inTorso(rw)) issues.push('arms_crossed');
   }
   if (visible(nose, 0.3)) {
     const nearFace = (p: Landmark, vis: boolean) => vis && dist(p, nose) < shoulderWidth * 0.45;
@@ -73,4 +80,28 @@ export function analysePosture(pose: PoseFrame | null, baseline?: PostureBaselin
 
   const score = Math.max(0, 100 - issues.reduce((s, i) => s + PENALTY[i], 0));
   return { score, issues, shoulderTiltDeg: tilt, neckRatio, bodyPresent: true };
+}
+
+/**
+ * Majority vote over the last few pose frames, so one noisy landmark (often an occluded wrist)
+ * does not make issues flicker on and off.
+ */
+export class PostureSmoother {
+  private recent: PostureIssue[][] = [];
+
+  constructor(private readonly frames = 9) {}
+
+  update(reading: PostureReading): PostureReading {
+    if (!reading.bodyPresent) {
+      this.recent = [];
+      return reading;
+    }
+    this.recent.push(reading.issues);
+    if (this.recent.length > this.frames) this.recent.shift();
+    const counts = new Map<PostureIssue, number>();
+    for (const frame of this.recent) for (const i of frame) counts.set(i, (counts.get(i) ?? 0) + 1);
+    const issues = [...counts].filter(([, n]) => n * 2 > this.recent.length).map(([i]) => i);
+    const score = Math.max(0, 100 - issues.reduce((s, i) => s + PENALTY[i], 0));
+    return { ...reading, issues, score };
+  }
 }

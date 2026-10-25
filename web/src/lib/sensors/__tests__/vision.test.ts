@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GazeTracker, headAngles, irisPosition, rawEyeContact } from '../vision/gaze';
-import { analysePosture } from '../vision/posture';
+import { analysePosture, PostureSmoother } from '../vision/posture';
 import { MotionTracker } from '../vision/motion';
 import { FACE_POINTS as F, POSE, type FaceFrame, type Landmark, type PoseFrame } from '../vision/types';
 
@@ -104,6 +104,27 @@ describe('posture', () => {
     expect(analysePosture(pose({ nose: { x: 0.5, y: 0.43, visibility: 1 } })).issues).toContain('slouching');
     expect(analysePosture(pose({ rightWrist: { x: 0.52, y: 0.36, visibility: 1 } })).issues).toContain('hand_on_face');
     expect(analysePosture(pose({ leftShoulder: { x: 0.65, y: 0.57, visibility: 1 } })).issues).toContain('shoulders_tilted');
+  });
+
+  it('detects crossed arms with the hands tucked under the opposite arm, not clasped hands', () => {
+    // Landmarks as MediaPipe reports a real crossed-arms photo: elbows at the sides, forearms
+    // level and pointing inward, right wrist still on its own side of the midline.
+    const tucked = { leftElbow: { x: 0.65, y: 0.84, visibility: 1 }, rightElbow: { x: 0.29, y: 0.85, visibility: 1 } };
+    const crossed = pose({ ...tucked, leftWrist: { x: 0.41, y: 0.8, visibility: 0.9 }, rightWrist: { x: 0.45, y: 0.81, visibility: 0.9 } });
+    expect(analysePosture(crossed).issues).toContain('arms_crossed');
+    const clasped = pose({ ...tucked, leftWrist: { x: 0.52, y: 0.93, visibility: 0.9 }, rightWrist: { x: 0.48, y: 0.93, visibility: 0.9 } });
+    expect(analysePosture(clasped).issues).not.toContain('arms_crossed');
+  });
+
+  it('smooths issues so a single noisy frame does not flip them', () => {
+    const smoother = new PostureSmoother(5);
+    const crossed = analysePosture(pose({ leftWrist: { x: 0.42, y: 0.72, visibility: 0.9 }, rightWrist: { x: 0.58, y: 0.72, visibility: 0.9 } }));
+    const open = analysePosture(pose());
+    for (let i = 0; i < 4; i++) smoother.update(crossed);
+    expect(smoother.update(open).issues).toContain('arms_crossed');
+    for (let i = 0; i < 3; i++) smoother.update(open);
+    expect(smoother.update(open).issues).toEqual([]);
+    expect(smoother.update(analysePosture(null)).bodyPresent).toBe(false);
   });
 
   it('is independent of mirroring', () => {
