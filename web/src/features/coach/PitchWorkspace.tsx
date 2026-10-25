@@ -150,7 +150,7 @@ export function PitchWorkspace({
   const activeModeObj = modes.find(m => m.id === currentMode) || modes[0];
 
   return (
-    <div className="flex flex-1 flex-col h-full overflow-hidden bg-[#0e0d16]">
+    <div className="flex flex-1 flex-col h-full overflow-hidden bg-panel">
       {/* Top Bar */}
       <header className="glass-panel flex h-16 items-center justify-between px-6 border-b border-white/5 shrink-0">
         <div>
@@ -280,7 +280,7 @@ export function PitchWorkspace({
       </div>
 
       {/* Composer & Microphone Station */}
-      <div className="glass-panel p-4 border-t border-white/5 shrink-0 bg-[#0e0d16]/95">
+      <div className="glass-panel p-4 border-t border-white/5 shrink-0 bg-panel/95">
         <div className="max-w-3xl mx-auto flex flex-col gap-3">
           {/* Live Waveform Canvas (when recording) */}
           {isRecording && (

@@ -7,12 +7,15 @@ import {
   Layers,
   Lock,
   MessagesSquare,
+  Moon,
   Presentation,
   Settings,
   Sparkles,
+  Sun,
 } from 'lucide-react';
 import { ProfileAvatar } from '@/features/profiles/ProfileGate';
 import { useAuth } from '@/stores/auth';
+import { useResolvedTheme, useTheme } from '@/stores/theme';
 import { useToast } from '@/stores/toast';
 
 const NAV = [
@@ -30,12 +33,14 @@ export function Shell() {
   const toast = useToast();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const theme = useResolvedTheme();
+  const toggleTheme = useTheme(s => s.toggle);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0b0a10] text-white">
+    <div className="flex h-screen w-screen overflow-hidden bg-app text-white">
       <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-white/5 bg-neutral-950/80 py-4" aria-label="Main">
         <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500">
-          <Sparkles className="h-4 w-4" />
+          <Sparkles className="h-4 w-4 text-white" />
         </div>
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink
@@ -88,6 +93,15 @@ export function Shell() {
             </div>
           )}
           <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            className="rounded-xl p-2 text-neutral-500 hover:bg-white/5 hover:text-neutral-200"
+            data-testid="theme-toggle"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
+          <button
             onClick={() => void lock()}
             title="Lock Pitch Coach"
             aria-label="Lock Pitch Coach"
@@ -106,7 +120,7 @@ export function Shell() {
         <div
           role="status"
           className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-xs shadow-2xl ${
-            toast.tone === 'error' ? 'border-rose-500/30 bg-rose-950 text-rose-100' : 'border-purple-500/30 bg-neutral-900 text-white'
+            toast.tone === 'error' ? 'border-rose-500/30 bg-rose-950 text-rose-200' : 'border-purple-500/30 bg-neutral-900 text-white'
           }`}
         >
           <span className={`h-2 w-2 rounded-full ${toast.tone === 'error' ? 'bg-rose-400' : 'bg-purple-400'}`} />

@@ -4,30 +4,136 @@
 
 :root {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+/* Theme colours (consumed by tailwind.config.js). Dark is the default; [data-theme] is set on <html>
+   before first paint by index.html and kept in sync by stores/theme.ts. */
+:root,
+[data-theme='light'] .keep-palette,
+[data-theme='light'] :is(.bg-purple-600, .bg-purple-500, .bg-rose-600, .bg-rose-500, .bg-amber-600, .bg-emerald-500, .from-purple-600, .bg-purple-600\/90, .bg-purple-600\/80) {
+  --c-white: 255 255 255;
+  --c-app: 11 10 16;
+  --c-panel: 14 13 22;
+  --c-neutral-50: 250 250 250;
+  --c-neutral-100: 245 245 245;
+  --c-neutral-200: 229 229 229;
+  --c-neutral-300: 212 212 212;
+  --c-neutral-400: 163 163 163;
+  --c-neutral-500: 115 115 115;
+  --c-neutral-600: 82 82 82;
+  --c-neutral-700: 64 64 64;
+  --c-neutral-800: 38 38 38;
+  --c-neutral-900: 23 23 23;
+  --c-neutral-950: 10 10 10;
+  --c-purple-200: 233 213 255;
+  --c-purple-300: 216 180 254;
+  --c-purple-400: 192 132 252;
+  --c-purple-950: 59 7 100;
+  --c-rose-200: 254 205 211;
+  --c-rose-300: 253 164 175;
+  --c-rose-400: 251 113 133;
+  --c-rose-950: 76 5 25;
+  --c-amber-200: 253 230 138;
+  --c-amber-300: 252 211 77;
+  --c-amber-400: 251 191 36;
+  --c-amber-950: 69 26 3;
+  --c-emerald-200: 167 243 208;
+  --c-emerald-300: 110 231 183;
+  --c-emerald-400: 52 211 153;
+  --c-emerald-950: 2 44 34;
+  --c-sky-200: 186 230 253;
+  --c-sky-300: 125 211 252;
+  --c-sky-400: 56 189 248;
+  --c-sky-950: 8 47 73;
+  --c-orange-200: 254 215 170;
+  --c-orange-300: 253 186 116;
+  --c-orange-400: 251 146 60;
+  --c-orange-950: 67 20 7;
+}
+:root {
   color-scheme: dark;
+  --glass-panel: rgba(22, 20, 31, 0.7);
+  --glass-card: rgba(30, 27, 42, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --scrollbar: rgba(255, 255, 255, 0.12);
+  --scrollbar-hover: rgba(255, 255, 255, 0.22);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --c-white: 23 22 28;
+  --c-app: 246 245 250;
+  --c-panel: 255 255 255;
+  --c-neutral-50: 10 10 10;
+  --c-neutral-100: 23 23 23;
+  --c-neutral-200: 38 38 38;
+  --c-neutral-300: 51 51 51;
+  --c-neutral-400: 82 82 82;
+  --c-neutral-500: 100 100 100;
+  --c-neutral-600: 138 138 138;
+  --c-neutral-700: 163 163 163;
+  --c-neutral-800: 229 229 229;
+  --c-neutral-900: 255 255 255;
+  --c-neutral-950: 250 250 250;
+  --c-purple-200: 107 33 168;
+  --c-purple-300: 126 34 206;
+  --c-purple-400: 147 51 234;
+  --c-purple-950: 243 232 255;
+  --c-rose-200: 159 18 57;
+  --c-rose-300: 190 18 60;
+  --c-rose-400: 225 29 72;
+  --c-rose-950: 255 228 230;
+  --c-amber-200: 146 64 14;
+  --c-amber-300: 180 83 9;
+  --c-amber-400: 217 119 6;
+  --c-amber-950: 254 243 199;
+  --c-emerald-200: 6 95 70;
+  --c-emerald-300: 4 120 87;
+  --c-emerald-400: 5 150 105;
+  --c-emerald-950: 209 250 229;
+  --c-sky-200: 7 89 133;
+  --c-sky-300: 3 105 161;
+  --c-sky-400: 2 132 199;
+  --c-sky-950: 224 242 254;
+  --c-orange-200: 154 52 18;
+  --c-orange-300: 194 65 12;
+  --c-orange-400: 234 88 12;
+  --c-orange-950: 255 237 213;
+  --glass-panel: rgba(255, 255, 255, 0.8);
+  --glass-card: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(23, 22, 28, 0.09);
+  --scrollbar: rgba(0, 0, 0, 0.16);
+  --scrollbar-hover: rgba(0, 0, 0, 0.28);
+}
+/* Slides are paper in both themes, and solid accent buttons keep white text. Those scopes above
+   restore the dark-theme values; colour itself must be reset too because it is inherited. */
+[data-theme='light'] :is(.bg-purple-600, .bg-purple-500, .bg-rose-600, .bg-rose-500, .bg-amber-600, .bg-emerald-500, .from-purple-600, .bg-purple-600\/90, .bg-purple-600\/80) {
+  color: #ffffff;
 }
 
 body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  background-color: #0b0a10;
-  color: #f1f0f5;
+  background-color: rgb(var(--c-app));
+  color: rgb(var(--c-white));
   overflow: hidden;
 }
 
 /* Glassmorphism panels */
 .glass-panel {
-  background: rgba(22, 20, 31, 0.7);
+  background: var(--glass-panel);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
 }
 
 .glass-card {
-  background: rgba(30, 27, 42, 0.6);
+  background: var(--glass-card);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+}
+[data-theme='light'] .glass-card {
+  box-shadow: 0 1px 2px rgba(23, 22, 28, 0.05);
 }
 
 /* Custom scrollbar */
@@ -41,12 +147,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--scrollbar);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--scrollbar-hover);
 }
 
 /* Animations */
@@ -70,6 +176,16 @@ body {
   --viz-series-1: #3987e5;
   --viz-series-2: #d95926;
   --viz-series-3: #199e70;
+}
+[data-theme='light'] {
+  --viz-surface: #ffffff;
+  --viz-text: #0b0b0b;
+  --viz-text-2: #52514e;
+  --viz-muted: #6b6a66;
+  --viz-grid: rgba(0, 0, 0, 0.1);
+  --viz-series-1: #2a78d6;
+  --viz-series-2: #eb6834;
+  --viz-series-3: #1baf7a;
 }
 @media print {
   :root {

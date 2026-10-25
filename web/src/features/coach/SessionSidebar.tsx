@@ -53,7 +53,7 @@ export function SessionSidebar({
 
   return (
     <>
-      <aside className="glass-panel flex h-full w-72 xl:w-80 flex-col border-r border-white/5 bg-[#0e0d16]/90 p-4 shrink-0 select-none">
+      <aside className="glass-panel flex h-full w-72 xl:w-80 flex-col border-r border-white/5 bg-panel/90 p-4 shrink-0 select-none">
         {/* Brand Header */}
         <div className="flex items-center justify-between pb-4">
           <div className="flex items-center gap-2.5">

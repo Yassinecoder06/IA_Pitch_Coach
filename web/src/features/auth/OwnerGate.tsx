@@ -66,7 +66,7 @@ export function OwnerGate({ children }: { children: ReactNode }) {
 
   if (state === 'loading') {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[#0b0a10]">
+      <div className="flex h-screen w-screen items-center justify-center bg-app">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
           <span className="text-sm text-neutral-400">Opening AI Pitch Coach...</span>
@@ -77,7 +77,7 @@ export function OwnerGate({ children }: { children: ReactNode }) {
 
   if (state === 'offline') {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[#0b0a10] p-4">
+      <div className="flex h-screen w-screen items-center justify-center bg-app p-4">
         <div className="glass-panel w-full max-w-md rounded-2xl p-6 text-center">
           <ShieldAlert className="mx-auto mb-3 h-10 w-10 text-amber-400" />
           <h2 className="text-lg font-bold">Backend Not Reachable</h2>
@@ -98,7 +98,7 @@ export function OwnerGate({ children }: { children: ReactNode }) {
   const setup = state === 'setup';
 
   return (
-    <main className="relative flex min-h-screen w-screen items-center justify-center bg-[#0b0a10] p-4 overflow-hidden">
+    <main className="relative flex min-h-screen w-screen items-center justify-center bg-app p-4 overflow-hidden">
       {/* Background glow */}
       <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 h-[450px] w-[650px] rounded-full bg-purple-600/15 blur-[120px]" />
       <div className="pointer-events-none absolute -bottom-40 right-10 h-[350px] w-[500px] rounded-full bg-indigo-600/10 blur-[100px]" />

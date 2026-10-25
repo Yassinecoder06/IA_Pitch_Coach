@@ -25,7 +25,7 @@ export function PrintReportPage() {
 
   return (
     <div className="paper min-h-screen">
-      <div className="no-print sticky top-0 z-10 flex items-center justify-between border-b border-neutral-200 bg-white px-6 py-3">
+      <div className="keep-palette no-print sticky top-0 z-10 flex items-center justify-between border-b border-neutral-200 bg-white px-6 py-3">
         <Link to={`/report/${r.id}`} className="text-sm underline">
           ← Back to the report
         </Link>

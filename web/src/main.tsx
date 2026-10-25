@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import App from '@/app/App';
 import { queryClient } from '@/lib/queryClient';
 import './index.css';
+import './stores/theme';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

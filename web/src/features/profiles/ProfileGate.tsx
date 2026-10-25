@@ -79,7 +79,7 @@ export function ProfilePicker() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#0b0a10] p-6">
+    <main className="flex min-h-screen items-center justify-center bg-app p-6">
       <section className="w-full max-w-2xl text-center">
         <h1 className="text-2xl font-bold text-white">Who is practicing?</h1>
         <p className="mt-1 text-sm text-neutral-400">Each profile keeps its own sessions, decks and rehearsal history.</p>

@@ -340,7 +340,7 @@ export function Report({ r, printMode = false }: { r: Rehearsal; printMode?: boo
             <div className="rounded-2xl border border-purple-500/30 bg-purple-950/20 p-4">
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-400">Rewrite your weakest moment</h2>
               <p className="text-sm text-neutral-500 line-through decoration-neutral-600">{judge.rewrite.original}</p>
-              <p className="mt-2 text-sm text-purple-100">{judge.rewrite.improved}</p>
+              <p className="mt-2 text-sm text-purple-200">{judge.rewrite.improved}</p>
             </div>
           )}
           {(a.clarity.key_terms_missing.length > 0 || a.clarity.unclear_count > 0) && (

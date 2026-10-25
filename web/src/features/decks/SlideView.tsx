@@ -11,14 +11,14 @@ const KIND_LABEL: Record<string, string> = {
 export function SlideView({ deckId, slide, version = '', compact = false }: { deckId: string; slide: Slide; version?: string; compact?: boolean }) {
   if (slide.has_image) {
     return (
-      <div className="aspect-video w-full overflow-hidden rounded-xl bg-white">
+      <div className="keep-palette aspect-video w-full overflow-hidden rounded-xl bg-white">
         <img src={decksApi.imageUrl(deckId, slide.idx, version)} alt={slide.title || `Slide ${slide.idx + 1}`} className="h-full w-full object-contain" draggable={false} />
       </div>
     );
   }
   return (
     <div
-      className={`flex aspect-video w-full flex-col justify-center overflow-hidden rounded-xl bg-gradient-to-br from-neutral-50 to-neutral-200 text-neutral-900 ${compact ? 'p-3' : 'p-[6%]'}`}
+      className={`keep-palette flex aspect-video w-full flex-col justify-center overflow-hidden rounded-xl bg-gradient-to-br from-neutral-50 to-neutral-200 text-neutral-900 ${compact ? 'p-3' : 'p-[6%]'}`}
       role="img"
       aria-label={slide.title || `Slide ${slide.idx + 1}`}
     >

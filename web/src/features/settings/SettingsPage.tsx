@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { Check, KeyRound, Trash2 } from 'lucide-react';
+import { Check, KeyRound, Monitor, Moon, Sun, Trash2 } from 'lucide-react';
 import { AiProvidersPanel } from './AiProvidersPanel';
 import { ProfileAvatar, PROFILE_COLORS } from '@/features/profiles/ProfileGate';
 import { api } from '@/lib/api';
 import { rehearsalsApi, type PrivacySettings } from '@/lib/rehearsals';
 import type { Profile } from '@/lib/types';
 import { useAuth } from '@/stores/auth';
+import { useTheme, type ThemeChoice } from '@/stores/theme';
 import { toast } from '@/stores/toast';
 
 const TABS = [
@@ -14,6 +15,7 @@ const TABS = [
   { to: 'profiles', label: 'Profiles' },
   { to: 'security', label: 'Security' },
   { to: 'privacy', label: 'Privacy' },
+  { to: 'appearance', label: 'Appearance' },
 ];
 
 export function SettingsPage() {
@@ -43,6 +45,7 @@ export function SettingsPage() {
           <Route path="profiles" element={<ProfilesSettings />} />
           <Route path="security" element={<SecuritySettings />} />
           <Route path="privacy" element={<PrivacySettingsPanel />} />
+          <Route path="appearance" element={<AppearanceSettings />} />
         </Routes>
       </div>
     </div>
@@ -290,6 +293,38 @@ function PrivacySettingsPanel() {
         </label>
       )}
       <p className="text-xs text-neutral-500">Reports and transcripts are kept until you delete them. Turning recordings off deletes audio right after each analysis.</p>
+    </div>
+  );
+}
+
+const THEMES: { id: ThemeChoice; label: string; icon: typeof Sun }[] = [
+  { id: 'dark', label: 'Dark', icon: Moon },
+  { id: 'light', label: 'Light', icon: Sun },
+  { id: 'system', label: 'Match system', icon: Monitor },
+];
+
+function AppearanceSettings() {
+  const { choice, setChoice } = useTheme();
+  return (
+    <div className="glass-card max-w-lg space-y-3 rounded-2xl p-5 text-sm">
+      <h2 className="font-semibold">Theme</h2>
+      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Theme">
+        {THEMES.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            role="radio"
+            aria-checked={choice === id}
+            onClick={() => setChoice(id)}
+            className={`flex flex-col items-center gap-2 rounded-xl border px-3 py-4 ${
+              choice === id ? 'border-purple-500 bg-purple-500/10 text-purple-300' : 'border-white/10 text-neutral-400 hover:bg-white/5'
+            }`}
+          >
+            <Icon className="h-5 w-5" />
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-neutral-500">Saved in this browser. Printed reports always use a light page.</p>
     </div>
   );
 }
